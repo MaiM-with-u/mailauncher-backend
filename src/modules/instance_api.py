@@ -46,7 +46,7 @@ async def deploy_version(version: str, payload: DeployRequest = Body(...)):
     logger.info(f"为实例 {payload.instance_name} 生成的 ID: {instance_id_str}")
 
     # 检查实例是否已存在
-    if existing_instance := instance_manager.get_instance(instance_id_str): # Sourcery建议的修改
+    if _existing_instance := instance_manager.get_instance(instance_id_str): # Sourcery建议的修改
         logger.warning(f"实例ID {instance_id_str} ({payload.instance_name}) 已存在。")
         raise HTTPException(status_code=409, detail=f"实例 '{payload.instance_name}' (ID: {instance_id_str}) 已存在。")
 
