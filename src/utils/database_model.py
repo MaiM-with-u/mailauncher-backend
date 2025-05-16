@@ -1,4 +1,4 @@
-from peewee import Model, IntegerField,TextField, DateTimeField
+from peewee import Model, IntegerField, TextField, DateTimeField
 from .database import db
 import sys
 from .logger import get_module_logger
@@ -6,9 +6,11 @@ import datetime
 
 logger = get_module_logger("数据库")
 
+
 class BaseModel(Model):
     class Meta:
         database = db
+
 
 class Instances(BaseModel):
     id = IntegerField(primary_key=True)
@@ -19,8 +21,10 @@ class Instances(BaseModel):
     status = TextField()
     port = IntegerField()
     created_at = DateTimeField(default=datetime.datetime.now)
+
     class Meta:
-        table_name = 'instances'
+        table_name = "instances"
+
 
 class Services(BaseModel):
     instance_id = TextField()
@@ -28,8 +32,9 @@ class Services(BaseModel):
     path = TextField()
     status = TextField()
     port = IntegerField()
+
     class Meta:
-        table_name = 'services'
+        table_name = "services"
 
 
 def create_tables():
@@ -69,7 +74,9 @@ def initialize_database():
                     model_fields = model._meta.fields
                     for field_name in model_fields:
                         if field_name not in existing_columns:
-                            logger.error(f"表 '{table_name}' 缺失字段 '{field_name}'，请手动迁移数据库结构后重启程序。")
+                            logger.error(
+                                f"表 '{table_name}' 缺失字段 '{field_name}'，请手动迁移数据库结构后重启程序。"
+                            )
                             sys.exit(1)
     except Exception as e:
         logger.exception(f"检查表或字段是否存在时出错: {e}")
@@ -85,4 +92,3 @@ def initialize_database():
             logger.exception(f"创建表期间出错: {e}")
     else:
         logger.info("所有数据库表及字段均已存在。")
-

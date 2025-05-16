@@ -1,6 +1,7 @@
 from loguru import logger
 from typing import Optional, Union, List, Tuple
 import sys
+
 # import os
 from types import ModuleType
 from pathlib import Path
@@ -31,19 +32,20 @@ LOG_ROOT = "logs"
 # print(global_config.debug_level)
 
 DEFAULT_CONFIG = {
-        # 日志级别配置
-        "console_level": global_config.debug_level,
-        "file_level": "DEBUG",
-        # 格式配置
-        "console_format": (
-            "<white>{time:MM-DD HH:mm}</white> | <level>{level: <1}</level> | <cyan>{extra[module]: <1}</cyan> | <level>{message}</level>"
-        ),
-        "file_format": "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {extra[module]: <15} | {message}",
-        "log_dir": LOG_ROOT,
-        "rotation": "00:00",
-        "retention": "3 days",
-        "compression": "zip",
-    }
+    # 日志级别配置
+    "console_level": global_config.debug_level,
+    "file_level": "DEBUG",
+    # 格式配置
+    "console_format": (
+        "<white>{time:MM-DD HH:mm}</white> | <level>{level: <1}</level> | <cyan>{extra[module]: <1}</cyan> | <level>{message}</level>"
+    ),
+    "file_format": "{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {extra[module]: <15} | {message}",
+    "log_dir": LOG_ROOT,
+    "rotation": "00:00",
+    "retention": "3 days",
+    "compression": "zip",
+}
+
 
 def is_registered_module(record: dict) -> bool:
     """检查是否为已注册的模块"""
@@ -63,6 +65,8 @@ def log_patcher(record: dict) -> None:
         if module_name == "":
             module_name = "root"
         record["extra"]["module"] = module_name
+
+
 class LogConfig:
     """日志配置类"""
 
@@ -99,9 +103,10 @@ def get_module_logger(
     # 控制台处理器
     console_id = logger.add(
         sink=sys.stderr,
-        level= global_config.debug_level,
+        level=global_config.debug_level,
         format=current_config["console_format"],
-        filter=lambda record: record["extra"].get("module") == module_name and "custom_style" not in record["extra"],
+        filter=lambda record: record["extra"].get("module") == module_name
+        and "custom_style" not in record["extra"],
         enqueue=True,
     )
     handler_ids.append(console_id)
@@ -120,7 +125,8 @@ def get_module_logger(
         retention=current_config["retention"],
         compression=current_config["compression"],
         encoding="utf-8",
-        filter=lambda record: record["extra"].get("module") == module_name and "custom_style" not in record["extra"],
+        filter=lambda record: record["extra"].get("module") == module_name
+        and "custom_style" not in record["extra"],
         enqueue=True,
     )
     handler_ids.append(file_id)

@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Response
 from src.utils.logger import get_module_logger
+
 # import sys
 from src.utils.config import global_config
 from src.utils.database_model import initialize_database
@@ -15,6 +16,7 @@ API_PREFIX = global_config.api_prefix
 
 
 APIRouterV1 = APIRouter()
+
 
 # 直接在 FastAPI app 实例上添加根路径
 @global_server.app.get("/", response_class=Response)
@@ -49,6 +51,7 @@ async def root_dashboard():
     """
     return Response(content=html_content, media_type="text/html")
 
+
 # APIRouterV1 上定义的所有路由都将以 API_PREFIX 为前缀
 
 global_server.register_router(APIRouterV1, prefix=API_PREFIX)
@@ -58,9 +61,13 @@ logger.info(f"已包含 API 路由，前缀为：{API_PREFIX}")
 # --- 服务器启动 ---
 if __name__ == "__main__":
     logger.info(f"正在 http://{HTTP_HOST}:{HTTP_PORT} 上启动 Uvicorn 服务器")
-    logger.info(f"API 文档将位于 http://{HTTP_HOST}:{HTTP_PORT}/docs 和 http://{HTTP_HOST}:{HTTP_PORT}/redoc")
-    logger.info(f"{API_PREFIX} 下的 WebSocket 端点将使用 ws://{HTTP_HOST}:{HTTP_PORT}{API_PREFIX}/...")
-    
+    logger.info(
+        f"API 文档将位于 http://{HTTP_HOST}:{HTTP_PORT}/docs 和 http://{HTTP_HOST}:{HTTP_PORT}/redoc"
+    )
+    logger.info(
+        f"{API_PREFIX} 下的 WebSocket 端点将使用 ws://{HTTP_HOST}:{HTTP_PORT}{API_PREFIX}/..."
+    )
+
     # 初始化数据库
     logger.info("正在初始化数据库...")
     initialize_database()
@@ -71,9 +78,8 @@ if __name__ == "__main__":
     # 它通常会是一个单独的 Python 应用程序/进程，直接使用像 'websockets' 这样的库，
     # 并且不会是此 FastAPI 应用程序的路由或 Uvicorn 实例的一部分。
     # 示例 WebSocket 端点 '/ws/{{client_id}}' 可通过 ws://{HTTP_HOST}:{HTTP_PORT}{API_PREFIX}/ws/{{client_id}} 访问
-    
+
     try:
         global_server.run()
     except KeyboardInterrupt:
         logger.info("服务器正在关闭...")
-

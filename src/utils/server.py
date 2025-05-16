@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware  # 新增导入
 from typing import Optional
 from uvicorn import Config, Server as UvicornServer
 import asyncio
+
 # import os
 from .logger import get_module_logger
 from .config import global_config
@@ -14,13 +15,17 @@ install(extra_lines=3)
 
 
 class Server:
-    def __init__(self, host: Optional[str] = None, port: Optional[int] = None, app_name: str = "MaiLauncher"):
+    def __init__(
+        self,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+        app_name: str = "MaiLauncher",
+    ):
         self.app = FastAPI(title=app_name)
         self._host: str = "127.0.0.1"
         self._port: int = 8080
         self._server: Optional[UvicornServer] = None
         self.set_address(host, port)
-
 
         self.app.add_middleware(
             CORSMiddleware,
@@ -68,12 +73,16 @@ class Server:
         config = Config(app=self.app, host=self._host, port=self._port)
         self._server = UvicornServer(config=config)
         try:
-            logger.info(f"服务器准备在 http://{self._host}:{self._port} 启动 (同步模式)")
+            logger.info(
+                f"服务器准备在 http://{self._host}:{self._port} 启动 (同步模式)"
+            )
             asyncio.run(self._server.serve())
             logger.info(f"服务器已在 http://{self._host}:{self._port} 停止")
         except KeyboardInterrupt:
-            logger.info("服务器接收到中断信号 (KeyboardInterrupt)，将通过 finally 关闭。")
-            raise # Uvicorn's serve() should handle KI and exit cleanly, this ensures propagation if not.
+            logger.info(
+                "服务器接收到中断信号 (KeyboardInterrupt)，将通过 finally 关闭。"
+            )
+            raise  # Uvicorn's serve() should handle KI and exit cleanly, this ensures propagation if not.
         except Exception as e:
             logger.error(f"服务器运行期间发生错误: {str(e)}")
             # The original code called self.shutdown() here too.
@@ -82,15 +91,15 @@ class Server:
             raise RuntimeError(f"服务器运行错误: {str(e)}") from e
         finally:
             logger.info("服务器 run 方法执行完毕，执行 finally 中的 shutdown。")
-            self.shutdown() # Call synchronous shutdown
+            self.shutdown()  # Call synchronous shutdown
 
     def shutdown(self):
         """安全关闭服务器"""
         if self._server:
             logger.info("请求关闭服务器...")
             # Check if Uvicorn server instance thinks it's started
-            if hasattr(self._server, 'started') and self._server.started:
-                self._server.should_exit = True # Signal Uvicorn server to exit
+            if hasattr(self._server, "started") and self._server.started:
+                self._server.should_exit = True  # Signal Uvicorn server to exit
                 try:
                     # Run Uvicorn's own async shutdown method
                     logger.info("执行 UvicornServer.shutdown()...")
@@ -98,12 +107,16 @@ class Server:
                     logger.info("UvicornServer.shutdown() 调用完成。")
                 except RuntimeError as e:
                     # Handle cases where asyncio.run() cannot be called (e.g., another loop running, loop closed)
-                    logger.warning(f"关闭服务器时执行 asyncio.run(self._server.shutdown()) 出错: {e}. 服务器可能已在关闭过程中或事件循环不可用。")
+                    logger.warning(
+                        f"关闭服务器时执行 asyncio.run(self._server.shutdown()) 出错: {e}. 服务器可能已在关闭过程中或事件循环不可用。"
+                    )
                 except Exception as e:
                     logger.error(f"关闭服务器时发生未知错误: {e}")
             else:
-                logger.info("服务器未在运行状态或已被标记为退出，无需执行 UvicornServer.shutdown()。")
-            self._server = None # Clear our reference to the server instance
+                logger.info(
+                    "服务器未在运行状态或已被标记为退出，无需执行 UvicornServer.shutdown()。"
+                )
+            self._server = None  # Clear our reference to the server instance
         else:
             logger.info("服务器实例不存在，无需关闭。")
 

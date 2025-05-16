@@ -6,6 +6,7 @@ from typing import Optional, List, Dict, Any
 
 logger = get_module_logger("实例管理器")
 
+
 class InstanceStatus(Enum):
     RUNNING = "运行中"
     STOPPED = "停止中"  # 原为 "停止中",保持不变
@@ -13,9 +14,21 @@ class InstanceStatus(Enum):
     MAINTENANCE = "维护中"
     NOT_RUNNING = "未运行"
 
+
 class Instance:
     """表示一个应用程序实例。"""
-    def __init__(self, instance_id: str, name: str, version: str, path: str, status: InstanceStatus, port: int, id: Optional[int] = None, created_at: Optional[datetime.datetime] = None):
+
+    def __init__(
+        self,
+        instance_id: str,
+        name: str,
+        version: str,
+        path: str,
+        status: InstanceStatus,
+        port: int,
+        id: Optional[int] = None,
+        created_at: Optional[datetime.datetime] = None,
+    ):
         """
         初始化 Instance 对象。
 
@@ -59,7 +72,7 @@ class Instance:
         }
 
     @classmethod
-    def from_db_model(cls, db_instance: Instances) -> 'Instance':
+    def from_db_model(cls, db_instance: Instances) -> "Instance":
         """
         从数据库模型对象创建 Instance 对象。
 
@@ -77,16 +90,26 @@ class Instance:
             path=db_instance.path,
             status=InstanceStatus(db_instance.status),  # 将数据库中的字符串转换为枚举
             port=db_instance.port,
-            created_at=db_instance.created_at
+            created_at=db_instance.created_at,
         )
+
 
 class InstanceManager:
     """管理应用程序实例的创建、检索、更新和删除。"""
+
     def __init__(self):
         """初始化 InstanceManager。"""
         pass
 
-    def create_instance(self, name: str, version: str, path: str, status: InstanceStatus, port: int, instance_id: str) -> Optional[Instance]:
+    def create_instance(
+        self,
+        name: str,
+        version: str,
+        path: str,
+        status: InstanceStatus,
+        port: int,
+        instance_id: str,
+    ) -> Optional[Instance]:
         """
         在数据库中创建一个新的实例记录。
 
@@ -109,7 +132,7 @@ class InstanceManager:
                     version=version,
                     path=path,
                     status=status.value,  # 存储枚举值
-                    port=port
+                    port=port,
                 )
                 logger.info(f"实例 {name} ({instance_id}) 创建成功。")
                 return Instance.from_db_model(db_instance)
@@ -128,7 +151,9 @@ class InstanceManager:
             Optional[Instance]: 如果找到实例，则返回 Instance 对象，否则返回 None。
         """
         try:
-            if db_instance := Instances.get_or_none(Instances.instance_id == instance_id):
+            if db_instance := Instances.get_or_none(
+                Instances.instance_id == instance_id
+            ):
                 return Instance.from_db_model(db_instance)
             logger.info(f"未找到实例ID为 {instance_id} 的实例。")
             return None
@@ -150,7 +175,9 @@ class InstanceManager:
             logger.error(f"检索所有实例时出错: {e}")
             return []
 
-    def update_instance_status(self, instance_id: str, new_status: InstanceStatus) -> bool:
+    def update_instance_status(
+        self, instance_id: str, new_status: InstanceStatus
+    ) -> bool:
         """
         更新数据库中指定实例的状态。
 
@@ -163,12 +190,16 @@ class InstanceManager:
         """
         try:
             with db.atomic():
-                if instance_to_update := Instances.get_or_none(Instances.instance_id == instance_id):
+                if instance_to_update := Instances.get_or_none(
+                    Instances.instance_id == instance_id
+                ):
                     instance_to_update.status = new_status.value  # 存储枚举值
                     instance_to_update.save()
-                    logger.info(f"实例 {instance_id} 的状态已更新为 {new_status.value}。")
+                    logger.info(
+                        f"实例 {instance_id} 的状态已更新为 {new_status.value}。"
+                    )
                     return True
-                
+
                 logger.warning(f"未找到实例ID为 {instance_id} 的实例以更新状态。")
                 return False
         except Exception as e:
@@ -188,18 +219,20 @@ class InstanceManager:
         """
         try:
             with db.atomic():
-                if instance_to_update := Instances.get_or_none(Instances.instance_id == instance_id):
+                if instance_to_update := Instances.get_or_none(
+                    Instances.instance_id == instance_id
+                ):
                     instance_to_update.port = new_port
                     instance_to_update.save()
                     logger.info(f"实例 {instance_id} 的端口已更新为 {new_port}。")
                     return True
-                
+
                 logger.warning(f"未找到实例ID为 {instance_id} 的实例以更新端口。")
                 return False
         except Exception as e:
             logger.error(f"更新实例 {instance_id} 端口时出错: {e}")
             return False
-            
+
     def delete_instance(self, instance_id: str) -> bool:
         """
         从数据库中删除指定的实例。
@@ -212,16 +245,19 @@ class InstanceManager:
         """
         try:
             with db.atomic():
-                if instance_to_delete := Instances.get_or_none(Instances.instance_id == instance_id):
+                if instance_to_delete := Instances.get_or_none(
+                    Instances.instance_id == instance_id
+                ):
                     instance_to_delete.delete_instance()  # Peewee 的 delete_instance 方法
                     logger.info(f"实例 {instance_id} 删除成功。")
                     return True
-                
+
                 logger.warning(f"未找到实例ID为 {instance_id} 的实例以进行删除。")
                 return False
         except Exception as e:
             logger.error(f"删除实例 {instance_id} 时出错: {e}")
             return False
+
 
 # 全局实例管理器
 instance_manager = InstanceManager()

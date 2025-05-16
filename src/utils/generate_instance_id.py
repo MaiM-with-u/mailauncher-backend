@@ -1,6 +1,7 @@
 import hashlib
 import os
 
+
 def hash_string_sha1_salt(input_string: str, salt: str | None = None) -> str:
     """
     使用 SHA1 和盐值哈希字符串。
@@ -14,10 +15,11 @@ def hash_string_sha1_salt(input_string: str, salt: str | None = None) -> str:
     """
     if salt is None:
         salt = os.urandom(16).hex()  # 生成一个16字节的随机盐值并转换为十六进制
-    
+
     salted_string = salt + input_string
-    hashed_string = hashlib.sha1(salted_string.encode('utf-8')).hexdigest()
+    hashed_string = hashlib.sha1(salted_string.encode("utf-8")).hexdigest()
     return f"{hashed_string}"
+
 
 def generate_instance_id(instance_name: str) -> str:
     """
@@ -31,4 +33,3 @@ def generate_instance_id(instance_name: str) -> str:
         一个唯一的 ID 字符串。
     """
     return hash_string_sha1_salt(instance_name)
-
