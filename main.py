@@ -1,4 +1,4 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Response
 from src.utils.logger import get_module_logger
 # import sys
 from src.utils.config import global_config
@@ -16,6 +16,38 @@ API_PREFIX = global_config.api_prefix
 
 APIRouterV1 = APIRouter()
 
+# 直接在 FastAPI app 实例上添加根路径
+@global_server.app.get("/", response_class=Response)
+async def root_dashboard():
+    html_content = """
+    <html>
+        <head>
+            <title>MaiLauncher Backend</title>
+            <style>
+                body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #f0f2f5; color: #333; display: flex; justify-content: center; align-items: center; height: 100vh; text-align: center; }
+                .container { background-color: #ffffff; padding: 50px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+                h1 { color: #4A90E2; margin-bottom: 20px; }
+                p { font-size: 1.1em; line-height: 1.6; }
+                .api-docs-link { display: inline-block; margin-top: 25px; padding: 10px 20px; background-color: #4CAF50; color: white; text-decoration: none; border-radius: 5px; font-weight: bold; }
+                .api-docs-link:hover { background-color: #45a049; }
+                .footer { margin-top: 30px; font-size: 0.9em; color: #777; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>欢迎来到 MaiLauncher 后端服务</h1>
+                <p>这是一个使用 FastAPI 构建的高效后端应用程序。</p>
+                <p>您可以通过以下链接访问 API 文档：</p>
+                <a href="/docs" class="api-docs-link">查看 API 文档 (/docs)</a>
+                <a href="/redoc" class="api-docs-link">查看 ReDoc 文档 (/redoc)</a>
+                <div class="footer">
+                    <p>&copy; 2025 MaiLauncher. 保留所有权利。</p>
+                </div>
+            </div>
+        </body>
+    </html>
+    """
+    return Response(content=html_content, media_type="text/html")
 
 # APIRouterV1 上定义的所有路由都将以 API_PREFIX 为前缀
 global_server.register_router(APIRouterV1, prefix=API_PREFIX)
