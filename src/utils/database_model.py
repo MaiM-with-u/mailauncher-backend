@@ -23,7 +23,7 @@ class Instances(BaseModel):
         table_name = 'instances'
 
 class Services(BaseModel):
-    instance_id = TextField(unique=True)
+    instance_id = TextField()
     name = TextField()
     path = TextField()
     status = TextField()

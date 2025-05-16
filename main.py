@@ -4,7 +4,7 @@ from src.utils.logger import get_module_logger
 from src.utils.config import global_config
 from src.utils.database_model import initialize_database
 from src.utils.server import global_server
-
+from src.modules import instance_api
 
 logger = get_module_logger("主程序")
 # --- 从 global_config 加载配置 ---
@@ -50,7 +50,9 @@ async def root_dashboard():
     return Response(content=html_content, media_type="text/html")
 
 # APIRouterV1 上定义的所有路由都将以 API_PREFIX 为前缀
+
 global_server.register_router(APIRouterV1, prefix=API_PREFIX)
+global_server.register_router(instance_api.router, prefix=API_PREFIX)
 logger.info(f"已包含 API 路由，前缀为：{API_PREFIX}")
 
 # --- 服务器启动 ---

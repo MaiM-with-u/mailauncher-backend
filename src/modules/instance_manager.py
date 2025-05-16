@@ -222,3 +222,6 @@ class InstanceManager:
         except Exception as e:
             logger.error(f"删除实例 {instance_id} 时出错: {e}")
             return False
+
+# 全局实例管理器
+instance_manager = InstanceManager()
