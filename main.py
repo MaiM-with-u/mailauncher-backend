@@ -1,13 +1,13 @@
 import uvicorn
-from fastapi import FastAPI, APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from src.utils.logger import get_module_logger
 # import sys
 from src.utils.config import global_config
-import toml # 添加：导入 toml 用于加载配置
+from src.utils.database_model import initialize_database
 
 
-logger = get_module_logger("Main")
+logger = get_module_logger("主程序")
 # --- 从 global_config 加载配置 ---
 HTTP_HOST = global_config.server_host
 HTTP_PORT = global_config.server_port
@@ -91,6 +91,10 @@ if __name__ == "__main__":
     logger.info(f"API 文档将位于 http://{HTTP_HOST}:{HTTP_PORT}/docs 和 http://{HTTP_HOST}:{HTTP_PORT}/redoc")
     logger.info(f"{API_PREFIX} 下的 WebSocket 端点将使用 ws://{HTTP_HOST}:{HTTP_PORT}{API_PREFIX}/...")
     
+    # 初始化数据库
+    logger.info("正在初始化数据库...")
+    initialize_database()
+    logger.info("数据库初始化完成。")
     # 关于 WebSocket 端口 23457 的说明：
     # FastAPI 集成了 WebSocket，使其与 HTTP 服务器在同一端口上运行 (在此设置中为端口 {HTTP_PORT})。
     # 如果您需要在 *不同* 端口 (例如 23457) 上运行 WebSocket 服务器，

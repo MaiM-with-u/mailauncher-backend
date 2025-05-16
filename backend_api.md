@@ -24,7 +24,7 @@
       "id": "a2fe529b51999fc2d45df5196c6c50a46a608fa1", #SHA1 + Salt ID
       "name": "maibot-stable-1",
       "status": "running",
-      "installedAt": "2025-05-15",
+      "installedAt": "1747404418536",
       "path": "D:\\MaiBot\\MaiBot-1",
       "port": 8000,
       "services": [
