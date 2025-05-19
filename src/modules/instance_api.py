@@ -7,7 +7,10 @@ from src.modules.instance_manager import (
 )  # instance_manager 已适配SQLModel
 from src.utils.generate_instance_id import generate_instance_id
 from src.utils.logger import get_module_logger
-from src.utils.database_model import Services, Instances  # SQLModel version - 添加 Instances
+from src.utils.database_model import (
+    Services,
+    Instances,
+)  # SQLModel version - 添加 Instances
 from src.utils.database import engine  # SQLModel engine
 from sqlmodel import Session, select  # SQLModel Session - 添加 select
 from sqlalchemy.exc import IntegrityError  # SQLAlchemy的IntegrityError
@@ -72,10 +75,14 @@ async def deploy_version(version: str, payload: DeployRequest = Body(...)):
     with Session(engine) as session:
         # 检查实例是否已存在 (在同一事务中)
         existing_instance_check = session.exec(
-            select(Instances).where(Instances.instance_id == instance_id_str)  # 更正：应查询 Instances 而非 Services
+            select(Instances).where(
+                Instances.instance_id == instance_id_str
+            )  # 更正：应查询 Instances 而非 Services
         ).first()
         if existing_instance_check:
-            logger.warning(f"实例ID {instance_id_str} ({payload.instance_name}) 已存在。")
+            logger.warning(
+                f"实例ID {instance_id_str} ({payload.instance_name}) 已存在。"
+            )
             raise HTTPException(
                 status_code=409,
                 detail=f"实例 '{payload.instance_name}' (ID: {instance_id_str}) 已存在。",
@@ -100,7 +107,9 @@ async def deploy_version(version: str, payload: DeployRequest = Body(...)):
                 db_session=session,  # 传入会话
             )
 
-            if not new_instance_obj:  # create_instance 在使用外部会话时，出错会重新引发异常
+            if (
+                not new_instance_obj
+            ):  # create_instance 在使用外部会话时，出错会重新引发异常
                 logger.error(
                     f"通过 InstanceManager 创建实例 {payload.instance_name} (ID: {instance_id_str}) 失败，但未引发异常。"
                 )
@@ -123,16 +132,14 @@ async def deploy_version(version: str, payload: DeployRequest = Body(...)):
 
         except IntegrityError as e:  # 捕获数据库层面的完整性错误，例如唯一约束
             session.rollback()  # 回滚事务
-            logger.error(f"部署实例 {payload.instance_name} 时发生数据库完整性错误: {e}")
-            raise HTTPException(
-                status_code=409, detail=f"保存部署信息时发生冲突: {e}"
+            logger.error(
+                f"部署实例 {payload.instance_name} 时发生数据库完整性错误: {e}"
             )
+            raise HTTPException(status_code=409, detail=f"保存部署信息时发生冲突: {e}")
         except Exception as e:
             session.rollback()  # 回滚事务
             logger.error(f"部署实例 {payload.instance_name} 期间发生意外错误: {e}")
-            raise HTTPException(
-                status_code=500, detail=f"处理部署时发生内部错误: {e}"
-            )
+            raise HTTPException(status_code=500, detail=f"处理部署时发生内部错误: {e}")
 
     logger.info(
         f"实例 {payload.instance_name} (ID: {instance_id_str}) 及关联服务已成功记录到数据库。"
@@ -157,18 +164,26 @@ async def get_available_versions():
             response = await client.get(github_api_url)
             response.raise_for_status()  # 如果请求失败则引发HTTPError
             tags_data = response.json()
-            
-            versions = [tag["name"] for tag in tags_data if "name" in tag and tag["name"] != "EasyInstall-windows"]
+
+            versions = [
+                tag["name"]
+                for tag in tags_data
+                if "name" in tag and tag["name"] != "EasyInstall-windows"
+            ]
             # 添加 "latest" 和 "main" 到列表，如果它们不存在
             if "latest" not in versions:
-                versions.insert(0, "latest") # 通常 latest 指向最新的稳定版，但这里我们手动添加
+                versions.insert(
+                    0, "latest"
+                )  # 通常 latest 指向最新的稳定版，但这里我们手动添加
             if "main" not in versions:
-                versions.insert(1, "main") # main 分支
+                versions.insert(1, "main")  # main 分支
 
             logger.info(f"从 GitHub 获取的版本列表: {versions}")
             return AvailableVersionsResponse(versions=versions)
     except httpx.HTTPStatusError as e:
-        logger.error(f"请求 GitHub API 失败: {e.response.status_code} - {e.response.text}")
+        logger.error(
+            f"请求 GitHub API 失败: {e.response.status_code} - {e.response.text}"
+        )
         # 返回一个默认的或空的列表，或者重新引发一个特定的HTTPException
         default_versions = ["latest", "main"]
         logger.warning(f"GitHub API 请求失败，返回默认版本列表: {default_versions}")
@@ -181,7 +196,9 @@ async def get_available_versions():
     except Exception as e:
         logger.error(f"获取版本列表时发生未知错误: {e}")
         default_versions = ["latest", "main"]
-        logger.warning(f"获取版本列表时发生未知错误，返回默认版本列表: {default_versions}")
+        logger.warning(
+            f"获取版本列表时发生未知错误，返回默认版本列表: {default_versions}"
+        )
         return AvailableVersionsResponse(versions=default_versions)
 
 
@@ -198,5 +215,3 @@ async def get_available_services():
     ]
     logger.info(f"返回可用服务列表: {hardcoded_services}")
     return AvailableServicesResponse(services=hardcoded_services)
-
-

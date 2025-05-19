@@ -147,7 +147,7 @@ class InstanceManager:
 
         返回:
             Optional[Instance]: 如果创建成功，则返回新的 Instance 对象，否则返回 None (如果内部管理会话时出错) 或引发异常 (如果使用提供的会话时出错)。
-        
+
         引发:
             Exception: 如果使用提供的 db_session 时在数据库操作期间发生错误。
         """
@@ -164,7 +164,7 @@ class InstanceManager:
             try:
                 db_session.add(db_model_instance)
                 db_session.flush()  # 确保 ID 被填充
-                db_session.refresh(db_model_instance) # 刷新以从数据库状态更新所有属性
+                db_session.refresh(db_model_instance)  # 刷新以从数据库状态更新所有属性
                 logger.info(f"实例 {name} ({instance_id}) 已添加到提供的会话。")
                 return Instance.from_db_model(db_model_instance)
             except Exception as e:
