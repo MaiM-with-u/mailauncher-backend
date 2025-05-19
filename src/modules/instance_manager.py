@@ -104,7 +104,9 @@ class InstanceManager:
         """初始化 InstanceManager。"""
         pass
 
-    def _execute_query(self, query, operation_name: str, instance_id: Optional[str] = None):
+    def _execute_query(
+        self, query, operation_name: str, instance_id: Optional[str] = None
+    ):
         """执行数据库查询并处理常见的异常。"""
         try:
             with Session(engine) as session:
@@ -207,12 +209,14 @@ class InstanceManager:
         """
         try:
             with Session(engine) as session:
-                if not (db_instance := session.exec(
-                    select(Instances).where(Instances.instance_id == instance_id)
-                ).first()):
+                if not (
+                    db_instance := session.exec(
+                        select(Instances).where(Instances.instance_id == instance_id)
+                    ).first()
+                ):
                     logger.warning(f"尝试更新状态失败：未找到实例 {instance_id}。")
                     return None
-                
+
                 db_instance.status = new_status.value
                 session.add(db_instance)
                 session.commit()
@@ -238,12 +242,14 @@ class InstanceManager:
         """
         try:
             with Session(engine) as session:
-                if not (db_instance := session.exec(
-                    select(Instances).where(Instances.instance_id == instance_id)
-                ).first()):
+                if not (
+                    db_instance := session.exec(
+                        select(Instances).where(Instances.instance_id == instance_id)
+                    ).first()
+                ):
                     logger.warning(f"尝试更新端口失败：未找到实例 {instance_id}。")
                     return None
-                
+
                 db_instance.port = new_port
                 session.add(db_instance)
                 session.commit()
@@ -266,12 +272,14 @@ class InstanceManager:
         """
         try:
             with Session(engine) as session:
-                if not (db_instance := session.exec(
-                    select(Instances).where(Instances.instance_id == instance_id)
-                ).first()):
+                if not (
+                    db_instance := session.exec(
+                        select(Instances).where(Instances.instance_id == instance_id)
+                    ).first()
+                ):
                     logger.warning(f"尝试删除失败：未找到实例 {instance_id}。")
                     return False
-                
+
                 session.delete(db_instance)
                 session.commit()
                 logger.info(f"实例 {instance_id} 已成功删除。")
