@@ -1,6 +1,6 @@
 import os
-from peewee import SqliteDatabase
 from rich.traceback import install
+from sqlmodel import create_engine, SQLModel # 导入SQLModel相关
 
 install(extra_lines=3)
 
@@ -12,5 +12,9 @@ _DB_FILE = os.path.join(_DB_DIR, "MaiLauncher.db")
 # 确保数据库目录存在
 os.makedirs(_DB_DIR, exist_ok=True)
 
-# 全局 Peewee SQLite 数据库访问点
-db = SqliteDatabase(_DB_FILE)
+# SQLModel 引擎
+sqlite_url = f"sqlite:///{_DB_FILE}"
+engine = create_engine(sqlite_url, echo=True) # echo=True 用于在开发时打印SQL语句，生产环境可以关闭
+
+def create_db_and_tables():
+    SQLModel.metadata.create_all(engine)

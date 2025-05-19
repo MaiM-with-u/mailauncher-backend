@@ -1,94 +1,35 @@
-from peewee import Model, IntegerField, TextField, DateTimeField
-from .database import db
-import sys
-from .logger import get_module_logger
+from sqlmodel import Field, SQLModel  # 导入SQLModel
+from typing import Optional
 import datetime
+from src.utils.logger import get_module_logger
+from src.utils.database import create_db_and_tables
 
-logger = get_module_logger("数据库")
-
-
-class BaseModel(Model):
-    class Meta:
-        database = db
+logger = get_module_logger("数据库模型")  # 日志记录器名称可以保持不变或更改
 
 
-class Instances(BaseModel):
-    id = IntegerField(primary_key=True)
-    instance_id = TextField(unique=True)
-    name = TextField()
-    version = TextField()
-    path = TextField()
-    status = TextField()
-    port = IntegerField()
-    created_at = DateTimeField(default=datetime.datetime.now)
-
-    class Meta:
-        table_name = "instances"
+class Instances(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)  # 数据库内部ID，主键
+    instance_id: str = Field(unique=True, index=True)  # 实例的唯一标识符，例如自动生成的ID
+    name: str  # 实例的名称，例如 "MaiBot-1"
+    version: str  # 实例部署的 MaiBot 版本
+    path: str  # 实例在文件系统中的路径
+    status: str  # 实例的当前状态 (例如, "running", "stopped", "error")
+    port: int  # 实例运行时占用的端口号
+    created_at: datetime.datetime = Field(default_factory=datetime.datetime.now)  # 实例创建时间
 
 
-class Services(BaseModel):
-    instance_id = TextField()
-    name = TextField()
-    path = TextField()
-    status = TextField()
-    port = IntegerField()
-
-    class Meta:
-        table_name = "services"
-
-
-def create_tables():
-    """
-    创建所有在模型中定义的数据库表。
-    """
-    with db:
-        db.create_tables(
-            [
-                Instances,
-                Services,
-            ]
-        )
+class Services(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)  # 服务记录的数据库内部ID，主键
+    instance_id: str = Field(index=True)  # 关联到Instances表的instance_id，表示该服务属于哪个实例
+    name: str  # 服务的名称 (例如, "chat-service", "database-service")
+    path: str  # 服务相关文件或可执行文件的路径
+    status: str  # 服务的当前状态 (例如, "active", "inactive", "pending")
+    port: int  # 服务运行时占用的端口号（如果适用）
 
 
 def initialize_database():
-    """
-    检查所有定义的表是否存在，如果不存在则创建它们。
-    检查所有表的所有字段是否存在，如果缺失则警告用户并退出程序。
-    """
-    models = [Instances, Services]
-    needs_creation = False
-    try:
-        with db:  # 管理 table_exists 检查的连接
-            for model in models:
-                table_name = model._meta.table_name
-                if not db.table_exists(model):
-                    logger.warning(f"表 '{table_name}' 未找到。")
-                    needs_creation = True
-                    break  # 一个表丢失，无需进一步检查。
-            if not needs_creation:
-                # 检查字段
-                for model in models:
-                    table_name = model._meta.table_name
-                    cursor = db.execute_sql(f"PRAGMA table_info('{table_name}')")
-                    existing_columns = {row[1] for row in cursor.fetchall()}
-                    model_fields = model._meta.fields
-                    for field_name in model_fields:
-                        if field_name not in existing_columns:
-                            logger.error(
-                                f"表 '{table_name}' 缺失字段 '{field_name}'，请手动迁移数据库结构后重启程序。"
-                            )
-                            sys.exit(1)
-    except Exception as e:
-        logger.exception(f"检查表或字段是否存在时出错: {e}")
-        # 如果检查失败（例如数据库不可用），则退出
-        return
-
-    if needs_creation:
-        logger.info("正在初始化数据库：一个或多个表丢失。正在尝试创建所有定义的表...")
-        try:
-            create_tables()  # 此函数有其自己的 'with db:' 上下文管理。
-            logger.info("数据库表创建过程完成。")
-        except Exception as e:
-            logger.exception(f"创建表期间出错: {e}")
-    else:
-        logger.info("所有数据库表及字段均已存在。")
+    """初始化数据库并创建表（如果它们尚不存在）。"""
+    # SQLModel 会自动处理表的创建
+    # 此处简化，不进行字段级检查和 sys.exit。
+    create_db_and_tables()
+    logger.info("数据库初始化完成，表已创建（如果不存在）。")

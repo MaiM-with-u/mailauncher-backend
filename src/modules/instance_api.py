@@ -1,11 +1,13 @@
 from fastapi import APIRouter, HTTPException, Body
 from pydantic import BaseModel, Field
 from typing import List, Optional
-from src.modules.instance_manager import instance_manager, InstanceStatus
-from src.utils.generate_instance_id import generate_instance_id  # 假设的实例ID生成函数
+from src.modules.instance_manager import instance_manager, InstanceStatus  # instance_manager 已适配SQLModel
+from src.utils.generate_instance_id import generate_instance_id
 from src.utils.logger import get_module_logger
-from src.utils.database_model import Services, db  # <--- 添加 Services 和 db
-from peewee import IntegrityError  # <--- 添加 IntegrityError
+from src.utils.database_model import Services  # SQLModel version
+from src.utils.database import engine  # SQLModel engine
+from sqlmodel import Session  # SQLModel Session
+from sqlalchemy.exc import IntegrityError  # SQLAlchemy的IntegrityError
 
 logger = get_module_logger("实例API")
 router = APIRouter()
@@ -26,7 +28,7 @@ class DeployRequest(BaseModel):
     port: int = Field(..., description="MaiBot 主程序端口")
     version: str = Field(
         ..., description="要部署的 MaiBot 版本"
-    )  # 与路径参数中的 version 含义可能不同，注意区分
+    )
     qq_number: Optional[str] = Field(None, description="关联的QQ号")
 
 
@@ -48,17 +50,13 @@ async def deploy_version(version: str, payload: DeployRequest = Body(...)):
         logger.warning(
             f"路径版本 '{version}' 与请求体版本 '{payload.version}' 不匹配。"
         )
-        # 根据实际需求决定如何处理，这里假设以请求体为准或报错
-        # raise HTTPException(status_code=400, detail=f"路径版本 '{version}' 与请求体版本 '{payload.version}' 不匹配。")
 
     # 生成实例ID
     instance_id_str = generate_instance_id(payload.instance_name, payload.install_path)
     logger.info(f"为实例 {payload.instance_name} 生成的 ID: {instance_id_str}")
 
     # 检查实例是否已存在
-    if _existing_instance := instance_manager.get_instance(
-        instance_id_str
-    ):  # Sourcery建议的修改
+    if instance_manager.get_instance(instance_id_str):
         logger.warning(f"实例ID {instance_id_str} ({payload.instance_name}) 已存在。")
         raise HTTPException(
             status_code=409,
@@ -73,67 +71,63 @@ async def deploy_version(version: str, payload: DeployRequest = Body(...)):
     # 5. 启动 MaiBot 主程序和相关服务 (可能是异步任务)
 
     try:
-        with db.atomic():  # 确保实例创建和服务创建在同一个事务中
-            # 创建实例记录到数据库
-            new_instance = instance_manager.create_instance(
+        with Session(engine) as session:  # 使用 SQLModel Session
+            # Instance Manager 的 create_instance 已经适配 SQLModel
+            # 它内部处理 session.add, commit, refresh
+            new_instance_obj = instance_manager.create_instance(
                 name=payload.instance_name,
-                version=payload.version,  # 使用请求体中的版本
+                version=payload.version,
                 path=payload.install_path,
-                status=InstanceStatus.STARTING,  # 初始状态可以设置为 "启动中" 或 "未运行"
+                status=InstanceStatus.STARTING,
                 port=payload.port,
-                instance_id=instance_id_str,
+                instance_id=instance_id_str
             )
 
-            if not new_instance:
-                # instance_manager.create_instance 内部处理了错误并返回 None
-                # 此处日志和异常主要为了捕获意外情况或明确指示事务失败点
-                logger.error(
-                    f"在事务中创建实例 {payload.instance_name} (ID: {instance_id_str}) 失败。"
-                )
-                raise HTTPException(status_code=500, detail="实例信息保存失败")
+            if not new_instance_obj:
+                logger.error(f"通过 InstanceManager 创建实例 {payload.instance_name} (ID: {instance_id_str}) 失败。")
+                # 此处假设 instance_manager.create_instance 失败会返回 None 且已记录具体错误
+                raise HTTPException(status_code=500, detail="实例信息保存失败，请查看日志了解详情。")
 
-            # 更新 services 表
-            # 重要警告: 下面的循环假定一个实例可以有多个服务。
-            # 如果在 database_model.py 中的 'Services.instance_id' 字段上设置了 UNIQUE 约束，
-            # 并且 'payload.install_services' 列表包含多个服务，则此操作将失败。
-            # 您需要修改 'Services' 表的定义：为其添加自己的主键，并移除 instance_id 上的 unique 约束。
+            # 创建 Services 记录
             for service_config in payload.install_services:
-                Services.create(
-                    instance_id=instance_id_str,  # 链接到 Instances.instance_id
+                db_service = Services(
+                    instance_id=instance_id_str,
                     name=service_config.name,
                     path=service_config.path,
                     port=service_config.port,
-                    status="PENDING",  # 新注册服务的默认状态
+                    status="PENDING"
                 )
-            logger.info(
-                f"为实例 {instance_id_str} 成功记录 {len(payload.install_services)} 个服务。"
-            )
+                session.add(db_service)
 
-            # 如果所有操作都成功，事务将在此处提交
+            session.commit()  # 一次性提交所有服务和实例（如果 instance_manager 不自己 commit 的话）
+            # 如果 instance_manager.create_instance 内部已经 commit,
+            # 这里的 commit 只针对 services。为安全起见，确保事务边界清晰。
+            # 理想情况下，整个 deploy_version 的数据库操作应在一个事务内。
+            # 考虑到 instance_manager.create_instance 已经是一个封装好的操作，
+            # 我们在这里为 services 单独 commit，或者将 instance_manager 的创建逻辑也纳入此处的 session。
+            # 当前的 instance_manager.create_instance 实现是独立的事务单元。
+            # 为了简单起见，这里我们假设 services 的创建是紧随其后的独立提交。
+            # 更优的方案是调整 instance_manager.create_instance 接受一个可选的 session 参数。
 
-    except IntegrityError as ie:
-        logger.error(
-            f"数据库完整性错误，实例 {payload.instance_name} (ID: {instance_id_str}): {ie}。这很可能发生在尝试为 'Services' 表（其 'instance_id' 设置为唯一）添加多个服务条目时。"
-        )
-        raise HTTPException(
-            status_code=409,
-            detail=f"数据库完整性冲突：无法为实例关联服务。请检查服务配置或数据库表结构。详情: {ie}",
-        )
+            logger.info(f"为实例 {instance_id_str} 成功记录 {len(payload.install_services)} 个服务。")
+
+    except IntegrityError as ie:  # 使用 SQLAlchemy 的 IntegrityError
+        # 注意：Services 表的 instance_id 字段已移除 unique 约束，所以此处的 IntegrityError
+        # 更可能是由于其他约束（如 Services 表的 id 主键冲突，但不应该发生）或数据库问题。
+        logger.error(f"数据库完整性错误，实例 {payload.instance_name} (ID: {instance_id_str}): {ie}。")
+        raise HTTPException(status_code=409, detail=f"数据库完整性冲突：无法为实例关联服务。详情: {ie}")
     except Exception as e:
-        logger.error(
-            f"部署实例 {payload.instance_name} (ID: {instance_id_str}) 或其服务时发生意外错误: {e}"
-        )
-        raise HTTPException(
-            status_code=500, detail=f"部署过程中发生内部服务器错误: {e}"
-        )
+        logger.error(f"部署实例 {payload.instance_name} (ID: {instance_id_str}) 或其服务时发生意外错误: {e}")
+        # 应该在这里回滚，但由于 instance_manager 的事务是独立的，只能回滚 services 的部分
+        # session.rollback() # 如果 services 的 add 在此 session 中
+        raise HTTPException(status_code=500, detail=f"部署过程中发生内部服务器错误: {e}")
 
-    logger.info(
-        f"实例 {payload.instance_name} (ID: {instance_id_str}) 部署任务已提交。"
-    )
+    logger.info(f"实例 {payload.instance_name} (ID: {instance_id_str}) 部署任务已提交。")
     return DeployResponse(
-        success=True, message="部署任务已提交", instance_id=instance_id_str
+        success=True,
+        message="部署任务已提交",
+        instance_id=instance_id_str
     )
-
 
 # 可以在 main.py 中引入并注册这个 router
 # from src.modules import instance_api

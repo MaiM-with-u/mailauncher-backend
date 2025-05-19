@@ -1,4 +1,7 @@
-from src.utils.database_model import Instances, db
+from src.utils.database_model import Instances  # SQLModel version
+from src.utils.database import engine  # SQLModel engine
+from sqlmodel import Session, select  # SQLModel session and select
+
 from src.utils.logger import get_module_logger
 import datetime
 from enum import Enum
@@ -9,7 +12,7 @@ logger = get_module_logger("实例管理器")
 
 class InstanceStatus(Enum):
     RUNNING = "运行中"
-    STOPPED = "停止中"  # 原为 "停止中",保持不变
+    STOPPED = "停止中"
     STARTING = "启动中"
     MAINTENANCE = "维护中"
     NOT_RUNNING = "未运行"
@@ -77,7 +80,7 @@ class Instance:
         从数据库模型对象创建 Instance 对象。
 
         参数:
-            db_instance (Instances): Peewee 数据库模型实例。
+            db_instance (Instances): SQLModel 数据库模型实例。
 
         返回:
             Instance: 根据数据库模型创建的 Instance 对象。
@@ -100,6 +103,21 @@ class InstanceManager:
     def __init__(self):
         """初始化 InstanceManager。"""
         pass
+
+    def _execute_query(self, query, operation_name: str, instance_id: Optional[str] = None):
+        """执行数据库查询并处理常见的异常。"""
+        try:
+            with Session(engine) as session:
+                result = session.exec(query).first()
+                session.commit()
+                return result
+        except Exception as e:
+            log_msg = f"{operation_name}时出错"
+            if instance_id:
+                log_msg += f" (实例ID: {instance_id})"
+            log_msg += f": {e}"
+            logger.error(log_msg)
+            return None
 
     def create_instance(
         self,
@@ -125,8 +143,8 @@ class InstanceManager:
             Optional[Instance]: 如果创建成功，则返回新的 Instance 对象，否则返回 None。
         """
         try:
-            with db.atomic():
-                db_instance = Instances.create(
+            with Session(engine) as session:
+                db_model_instance = Instances(
                     instance_id=instance_id,
                     name=name,
                     version=version,
@@ -134,8 +152,11 @@ class InstanceManager:
                     status=status.value,  # 存储枚举值
                     port=port,
                 )
+                session.add(db_model_instance)
+                session.commit()
+                session.refresh(db_model_instance)
                 logger.info(f"实例 {name} ({instance_id}) 创建成功。")
-                return Instance.from_db_model(db_instance)
+                return Instance.from_db_model(db_model_instance)
         except Exception as e:
             logger.error(f"创建实例 {name} ({instance_id}) 时出错: {e}")
             return None
@@ -150,92 +171,92 @@ class InstanceManager:
         返回:
             Optional[Instance]: 如果找到实例，则返回 Instance 对象，否则返回 None。
         """
-        try:
-            if db_instance := Instances.get_or_none(
-                Instances.instance_id == instance_id
-            ):
-                return Instance.from_db_model(db_instance)
-            logger.info(f"未找到实例ID为 {instance_id} 的实例。")
-            return None
-        except Exception as e:
-            logger.error(f"检索实例 {instance_id} 时出错: {e}")
-            return None
+        statement = select(Instances).where(Instances.instance_id == instance_id)
+        if db_instance := self._execute_query(statement, "获取实例", instance_id):
+            return Instance.from_db_model(db_instance)
+        return None
 
     def get_all_instances(self) -> List[Instance]:
         """
         从数据库中检索所有实例。
 
         返回:
-            List[Instance]: 包含所有 Instance 对象的列表。如果出错则返回空列表。
+            List[Instance]: 包含所有实例的 Instance 对象列表。
         """
         try:
-            db_instances = Instances.select()
-            return [Instance.from_db_model(db_i) for db_i in db_instances]
+            with Session(engine) as session:
+                statement = select(Instances)
+                results = session.exec(statement).all()
+                return [Instance.from_db_model(db_instance) for db_instance in results]
         except Exception as e:
-            logger.error(f"检索所有实例时出错: {e}")
+            logger.error(f"获取所有实例时出错: {e}")
             return []
 
     def update_instance_status(
         self, instance_id: str, new_status: InstanceStatus
-    ) -> bool:
+    ) -> Optional[Instance]:
         """
-        更新数据库中指定实例的状态。
+        更新数据库中现有实例的状态。
 
         参数:
-            instance_id (str): 要更新状态的实例的唯一ID。
-            new_status (InstanceStatus): 实例的新状态。
+            instance_id (str): 要更新的实例的唯一ID。
+            new_status (InstanceStatus): 要设置的新状态。
 
         返回:
-            bool: 如果更新成功则返回 True，否则返回 False。
+            Optional[Instance]: 如果更新成功，则返回更新后的 Instance 对象，否则返回 None。
         """
         try:
-            with db.atomic():
-                if instance_to_update := Instances.get_or_none(
-                    Instances.instance_id == instance_id
-                ):
-                    instance_to_update.status = new_status.value  # 存储枚举值
-                    instance_to_update.save()
-                    logger.info(
-                        f"实例 {instance_id} 的状态已更新为 {new_status.value}。"
-                    )
-                    return True
-
-                logger.warning(f"未找到实例ID为 {instance_id} 的实例以更新状态。")
-                return False
+            with Session(engine) as session:
+                if not (db_instance := session.exec(
+                    select(Instances).where(Instances.instance_id == instance_id)
+                ).first()):
+                    logger.warning(f"尝试更新状态失败：未找到实例 {instance_id}。")
+                    return None
+                
+                db_instance.status = new_status.value
+                session.add(db_instance)
+                session.commit()
+                session.refresh(db_instance)
+                logger.info(f"实例 {instance_id} 的状态已更新为 {new_status.value}。")
+                return Instance.from_db_model(db_instance)
         except Exception as e:
             logger.error(f"更新实例 {instance_id} 状态时出错: {e}")
-            return False
+            return None
 
-    def update_instance_port(self, instance_id: str, new_port: int) -> bool:
+    def update_instance_port(
+        self, instance_id: str, new_port: int
+    ) -> Optional[Instance]:
         """
-        更新数据库中指定实例的端口号。
+        更新数据库中现有实例的端口号。
 
         参数:
-            instance_id (str): 要更新端口的实例的唯一ID。
-            new_port (int): 实例的新端口号。
+            instance_id (str): 要更新的实例的唯一ID。
+            new_port (int): 要设置的新端口号。
 
         返回:
-            bool: 如果更新成功则返回 True，否则返回 False。
+            Optional[Instance]: 如果更新成功，则返回更新后的 Instance 对象，否则返回 None。
         """
         try:
-            with db.atomic():
-                if instance_to_update := Instances.get_or_none(
-                    Instances.instance_id == instance_id
-                ):
-                    instance_to_update.port = new_port
-                    instance_to_update.save()
-                    logger.info(f"实例 {instance_id} 的端口已更新为 {new_port}。")
-                    return True
-
-                logger.warning(f"未找到实例ID为 {instance_id} 的实例以更新端口。")
-                return False
+            with Session(engine) as session:
+                if not (db_instance := session.exec(
+                    select(Instances).where(Instances.instance_id == instance_id)
+                ).first()):
+                    logger.warning(f"尝试更新端口失败：未找到实例 {instance_id}。")
+                    return None
+                
+                db_instance.port = new_port
+                session.add(db_instance)
+                session.commit()
+                session.refresh(db_instance)
+                logger.info(f"实例 {instance_id} 的端口已更新为 {new_port}。")
+                return Instance.from_db_model(db_instance)
         except Exception as e:
             logger.error(f"更新实例 {instance_id} 端口时出错: {e}")
-            return False
+            return None
 
     def delete_instance(self, instance_id: str) -> bool:
         """
-        从数据库中删除指定的实例。
+        从数据库中删除一个实例。
 
         参数:
             instance_id (str): 要删除的实例的唯一ID。
@@ -244,16 +265,17 @@ class InstanceManager:
             bool: 如果删除成功则返回 True，否则返回 False。
         """
         try:
-            with db.atomic():
-                if instance_to_delete := Instances.get_or_none(
-                    Instances.instance_id == instance_id
-                ):
-                    instance_to_delete.delete_instance()  # Peewee 的 delete_instance 方法
-                    logger.info(f"实例 {instance_id} 删除成功。")
-                    return True
-
-                logger.warning(f"未找到实例ID为 {instance_id} 的实例以进行删除。")
-                return False
+            with Session(engine) as session:
+                if not (db_instance := session.exec(
+                    select(Instances).where(Instances.instance_id == instance_id)
+                ).first()):
+                    logger.warning(f"尝试删除失败：未找到实例 {instance_id}。")
+                    return False
+                
+                session.delete(db_instance)
+                session.commit()
+                logger.info(f"实例 {instance_id} 已成功删除。")
+                return True
         except Exception as e:
             logger.error(f"删除实例 {instance_id} 时出错: {e}")
             return False
