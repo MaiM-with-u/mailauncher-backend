@@ -129,9 +129,12 @@ class InstanceManager:
         status: InstanceStatus,
         port: int,
         instance_id: str,
+        db_session: Optional[Session] = None,  # 添加可选的 db_session 参数
     ) -> Optional[Instance]:
         """
         在数据库中创建一个新的实例记录。
+        如果提供了 db_session，则实例将添加到该会话中但不会提交；提交由调用方负责。
+        返回的 Instance 对象将在添加到会话成功后填充 ID。
 
         参数:
             name (str): 实例的名称。
@@ -140,28 +143,45 @@ class InstanceManager:
             status (InstanceStatus): 实例的初始状态。
             port (int): 实例的端口号。
             instance_id (str): 要创建的实例的唯一ID。
+            db_session (Optional[Session]): 用于数据库操作的可选SQLModel会话。
 
         返回:
-            Optional[Instance]: 如果创建成功，则返回新的 Instance 对象，否则返回 None。
+            Optional[Instance]: 如果创建成功，则返回新的 Instance 对象，否则返回 None (如果内部管理会话时出错) 或引发异常 (如果使用提供的会话时出错)。
+        
+        引发:
+            Exception: 如果使用提供的 db_session 时在数据库操作期间发生错误。
         """
-        try:
-            with Session(engine) as session:
-                db_model_instance = Instances(
-                    instance_id=instance_id,
-                    name=name,
-                    version=version,
-                    path=path,
-                    status=status.value,  # 存储枚举值
-                    port=port,
-                )
-                session.add(db_model_instance)
-                session.commit()
-                session.refresh(db_model_instance)
-                logger.info(f"实例 {name} ({instance_id}) 创建成功。")
+        db_model_instance = Instances(
+            instance_id=instance_id,
+            name=name,
+            version=version,
+            path=path,
+            status=status.value,
+            port=port,
+        )
+
+        if db_session:
+            try:
+                db_session.add(db_model_instance)
+                db_session.flush()  # 确保 ID 被填充
+                db_session.refresh(db_model_instance) # 刷新以从数据库状态更新所有属性
+                logger.info(f"实例 {name} ({instance_id}) 已添加到提供的会话。")
                 return Instance.from_db_model(db_model_instance)
-        except Exception as e:
-            logger.error(f"创建实例 {name} ({instance_id}) 时出错: {e}")
-            return None
+            except Exception as e:
+                logger.error(f"向提供的会话添加实例 {name} ({instance_id}) 时出错: {e}")
+                raise  # 重新引发异常，以便调用方可以处理事务
+        else:
+            # 内部管理会话
+            try:
+                with Session(engine) as session:
+                    session.add(db_model_instance)
+                    session.commit()
+                    session.refresh(db_model_instance)
+                    logger.info(f"实例 {name} ({instance_id}) 创建成功并已提交。")
+                    return Instance.from_db_model(db_model_instance)
+            except Exception as e:
+                logger.error(f"创建并提交实例 {name} ({instance_id}) 时出错: {e}")
+                return None
 
     def get_instance(self, instance_id: str) -> Optional[Instance]:
         """
