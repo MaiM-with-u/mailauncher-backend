@@ -7,6 +7,7 @@ __pycache__/
 *.so
 
 data/
+config.toml
 
 # Distribution / packaging
 .Python
