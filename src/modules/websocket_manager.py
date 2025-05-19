@@ -6,7 +6,6 @@ import json
 import shlex
 from typing import Dict, Any, Tuple, Optional
 import logging
-from contextlib import suppress
 
 from src.utils.database import Database, get_db_instance
 from src.modules.instance_manager import instance_manager, InstanceStatus
