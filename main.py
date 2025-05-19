@@ -6,8 +6,8 @@ from src.utils.config import global_config
 from src.utils.database_model import initialize_database
 from src.utils.server import global_server
 from src.modules import instance_api
-from src.modules import system # 添加导入
-from src.modules import deploy_api # 添加 deploy_api 导入
+from src.modules import system  # 添加导入
+from src.modules import deploy_api  # 添加 deploy_api 导入
 
 logger = get_module_logger("主程序")
 # --- 从 global_config 加载配置 ---
@@ -58,8 +58,10 @@ async def root_dashboard():
 
 global_server.register_router(APIRouterV1, prefix=API_PREFIX)
 global_server.register_router(instance_api.router, prefix=API_PREFIX)
-global_server.register_router(system.router, prefix=API_PREFIX) # 注册 system router
-global_server.register_router(deploy_api.router, prefix=f"{API_PREFIX}/deploy") # 注册 deploy_api router，并添加 /deploy 前缀
+global_server.register_router(system.router, prefix=API_PREFIX)  # 注册 system router
+global_server.register_router(
+    deploy_api.router, prefix=f"{API_PREFIX}/deploy"
+)  # 注册 deploy_api router，并添加 /deploy 前缀
 logger.info(f"已包含 API 路由，前缀为：{API_PREFIX}")
 
 # --- 服务器启动 ---

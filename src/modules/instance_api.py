@@ -59,15 +59,19 @@ class ServiceDetail(BaseModel):
     status: str
     port: int
 
+
 class InstanceDetail(BaseModel):
     id: str
     name: str
     status: str
-    installedAt: Optional[str] = None # Assuming installedAt might not always be present or is a string representation
+    installedAt: Optional[str] = (
+        None  # Assuming installedAt might not always be present or is a string representation
+    )
     path: str
     port: int
     services: List[ServiceDetail]
     version: str
+
 
 class GetInstancesResponse(BaseModel):
     instances: List[InstanceDetail]
@@ -96,7 +100,9 @@ async def get_instances():
             for db_instance in db_instances:
                 # 查询每个实例关联的服务
                 db_services = session.exec(
-                    select(Services).where(Services.instance_id == db_instance.instance_id)
+                    select(Services).where(
+                        Services.instance_id == db_instance.instance_id
+                    )
                 ).all()
 
                 services_details = [
@@ -108,15 +114,21 @@ async def get_instances():
                     )
                     for service in db_services
                 ]
-                
+
                 # installedAt 可能是 datetime 对象，需要转换为字符串
-                installed_at_str = db_instance.installed_at.isoformat() if db_instance.installed_at else None
+                installed_at_str = (
+                    db_instance.installed_at.isoformat()
+                    if db_instance.installed_at
+                    else None
+                )
 
                 instance_detail = InstanceDetail(
                     id=db_instance.instance_id,
                     name=db_instance.name,
-                    status=db_instance.status.value if isinstance(db_instance.status, InstanceStatus) else db_instance.status, # 处理枚举类型
-                    installedAt=installed_at_str, # 使用转换后的字符串
+                    status=db_instance.status.value
+                    if isinstance(db_instance.status, InstanceStatus)
+                    else db_instance.status,  # 处理枚举类型
+                    installedAt=installed_at_str,  # 使用转换后的字符串
                     path=db_instance.path,
                     port=db_instance.port,
                     services=services_details,
@@ -141,11 +153,11 @@ async def get_instance_stats():
     try:
         with Session(engine) as session:
             db_instances = session.exec(select(Instances)).all()
-            
+
             total_instances = len(db_instances)
             running_instances = 0
             stopped_instances = 0
-            
+
             for instance in db_instances:
                 # 使用 InstanceStatus 枚举的 .value 进行比较
                 if instance.status == InstanceStatus.RUNNING.value:
@@ -154,7 +166,9 @@ async def get_instance_stats():
                     stopped_instances += 1
                 # 可以根据需要添加对其他状态的计数
 
-            logger.info(f"实例统计: 总数={total_instances}, 运行中={running_instances}, 已停止={stopped_instances}")
+            logger.info(
+                f"实例统计: 总数={total_instances}, 运行中={running_instances}, 已停止={stopped_instances}"
+            )
             return InstanceStatsResponse(
                 total=total_instances,
                 running=running_instances,

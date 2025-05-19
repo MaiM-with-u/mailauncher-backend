@@ -16,14 +16,16 @@ from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 import httpx
 
-logger = get_module_logger("部署API") # 修改 logger 名称
+logger = get_module_logger("部署API")  # 修改 logger 名称
 router = APIRouter()
+
 
 # Pydantic Models from instance_api.py (related to deploy)
 class ServiceInstallConfig(BaseModel):
     name: str = Field(..., description="服务名称")
     path: str = Field(..., description="服务安装路径")
     port: int = Field(..., description="服务端口")
+
 
 class DeployRequest(BaseModel):
     instance_name: str = Field(..., description="实例名称")
@@ -35,26 +37,32 @@ class DeployRequest(BaseModel):
     version: str = Field(..., description="要部署的 MaiBot 版本")
     qq_number: Optional[str] = Field(None, description="关联的QQ号")
 
+
 class DeployResponse(BaseModel):
     success: bool
     message: str
     instance_id: Optional[str] = None
 
+
 class AvailableVersionsResponse(BaseModel):
     versions: List[str]
+
 
 class ServiceInfo(BaseModel):
     name: str
     description: str
 
+
 class AvailableServicesResponse(BaseModel):
     services: List[ServiceInfo]
+
 
 class ServiceInstallStatus(BaseModel):
     name: str
     status: str  # e.g., "pending", "installing", "completed", "failed"
     progress: int = Field(..., ge=0, le=100)
     message: str
+
 
 class InstallStatusResponse(BaseModel):
     status: str  # Overall status: "installing", "completed", "failed"
@@ -63,21 +71,21 @@ class InstallStatusResponse(BaseModel):
     services_install_status: List[ServiceInstallStatus]
 
 
-@router.post("/deploy", response_model=DeployResponse) # 修改路径为 /deploy
+@router.post("/deploy", response_model=DeployResponse)  # 修改路径为 /deploy
 async def deploy_maibot(payload: DeployRequest = Body(...)):
     """
     部署指定版本的 MaiBot。
     """
-    logger.info(f"收到部署请求，版本: {payload.version}, 实例名称: {payload.instance_name}")
+    logger.info(
+        f"收到部署请求，版本: {payload.version}, 实例名称: {payload.instance_name}"
+    )
 
     instance_id_str = generate_instance_id(payload.instance_name, payload.install_path)
     logger.info(f"为实例 {payload.instance_name} 生成的 ID: {instance_id_str}")
 
     with Session(engine) as session:
         existing_instance_check = session.exec(
-            select(Instances).where(
-                Instances.instance_id == instance_id_str
-            )
+            select(Instances).where(Instances.instance_id == instance_id_str)
         ).first()
         if existing_instance_check:
             logger.warning(
@@ -140,7 +148,10 @@ async def deploy_maibot(payload: DeployRequest = Body(...)):
         instance_id=instance_id_str,
     )
 
-@router.get("/versions", response_model=AvailableVersionsResponse) # 修改路径为 /versions
+
+@router.get(
+    "/versions", response_model=AvailableVersionsResponse
+)  # 修改路径为 /versions
 async def get_available_versions():
     """
     获取可用于部署的版本列表。
@@ -184,7 +195,10 @@ async def get_available_versions():
         )
         return AvailableVersionsResponse(versions=default_versions)
 
-@router.get("/services", response_model=AvailableServicesResponse) # 修改路径为 /services
+
+@router.get(
+    "/services", response_model=AvailableServicesResponse
+)  # 修改路径为 /services
 async def get_available_services():
     """
     获取可以部署的服务列表。
@@ -196,7 +210,10 @@ async def get_available_services():
     logger.info(f"返回可用服务列表: {hardcoded_services}")
     return AvailableServicesResponse(services=hardcoded_services)
 
-@router.get("/install-status/{instance_id}", response_model=InstallStatusResponse) # 修改路径为 /install-status/{instance_id}
+
+@router.get(
+    "/install-status/{instance_id}", response_model=InstallStatusResponse
+)  # 修改路径为 /install-status/{instance_id}
 async def get_install_status(instance_id: str):
     """
     检查安装进度和状态。
