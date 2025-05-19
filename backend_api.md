@@ -165,7 +165,7 @@
 
 ### 获取可用版本
 
-- **路径**: `/api/v1/versions`
+- **路径**: `/api/v1/deploy/versions`
 - **方法**: `GET`
 - **描述**: 获取可用于部署的版本列表
 - **响应**:
@@ -204,11 +204,9 @@
 
 ### 部署版本
 
-- **路径**: `/api/v1/deploy/{version}`
+- **路径**: `/api/v1/deploy/deploy`
 - **方法**: `POST`
 - **描述**: 部署指定版本的 MaiBot
-- **参数**:
-  - `version`: 版本号（路径参数）
 - **请求体**:
 
 ```json
@@ -280,7 +278,7 @@
 
 ### 健康检查
 
-- **路径**: `/api/v1/health`
+- **路径**: `/api/v1/system/health`
 - **方法**: `GET`
 - **描述**: 检查后端服务的健康状态
 - **响应**:
@@ -324,22 +322,16 @@
             "release": "11",
             "version": "10.0.26100",
             "machine": "AMD64",
-            "processor": "Intel64 Family 6 Model 183 Stepping 1, GenuineIntel"
+            "processor": "Intel(R) Core(TM) i9-14900HX "
         },
         "python_version": "3.12.4 (tags/v3.12.4:8e8a4ba, Jun  6 2024, 19:30:16) [MSC v.1940 64 bit (AMD64)]",
         "cpu_usage_percent": 18.8,
-        "process_cpu_usage_percent": 0.0,
         "memory_usage": {
             "total_mb": 32386.52,
             "available_mb": 10222.87,
             "percent": 68.4,
             "used_mb": 22163.65,
             "free_mb": 10222.87
-        },
-        "process_memory_usage": {
-            "rss_mb": 1635.66,
-            "vms_mb": 7206.52,
-            "percent": 5.050423666871388
         },
         "disk_usage_root": {
             "total_gb": 726.17,

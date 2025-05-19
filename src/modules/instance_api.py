@@ -56,17 +56,26 @@ class AvailableServicesResponse(BaseModel):
     services: List[ServiceInfo]
 
 
-@router.post("/deploy/{version}", response_model=DeployResponse)
-async def deploy_version(version: str, payload: DeployRequest = Body(...)):
+class ServiceInstallStatus(BaseModel):
+    name: str
+    status: str  # e.g., "pending", "installing", "completed", "failed"
+    progress: int = Field(..., ge=0, le=100)
+    message: str
+
+
+class InstallStatusResponse(BaseModel):
+    status: str  # Overall status: "installing", "completed", "failed"
+    progress: int = Field(..., ge=0, le=100)
+    message: str
+    services_install_status: List[ServiceInstallStatus]
+
+
+@router.post("/deploy/deploy", response_model=DeployResponse)  # 修改路径
+async def deploy_maibot(payload: DeployRequest = Body(...)):  # 修改函数签名，移除 version 参数
     """
     部署指定版本的 MaiBot。
     """
-    logger.info(f"收到部署请求，版本: {version}, 实例名称: {payload.instance_name}")
-
-    if version != payload.version:
-        logger.warning(
-            f"路径版本 '{version}' 与请求体版本 '{payload.version}' 不匹配。"
-        )
+    logger.info(f"收到部署请求，版本: {payload.version}, 实例名称: {payload.instance_name}")  # 使用 payload 中的 version
 
     instance_id_str = generate_instance_id(payload.instance_name, payload.install_path)
     logger.info(f"为实例 {payload.instance_name} 生成的 ID: {instance_id_str}")
@@ -146,7 +155,7 @@ async def deploy_version(version: str, payload: DeployRequest = Body(...)):
     )
     return DeployResponse(
         success=True,
-        message=f"MaiBot 版本 {version} 的实例 {payload.instance_name} 部署任务已启动并记录。",
+        message=f"MaiBot 版本 {payload.version} 的实例 {payload.instance_name} 部署任务已启动并记录。",  # 使用 payload 中的 version
         instance_id=instance_id_str,
     )
 
@@ -215,3 +224,40 @@ async def get_available_services():
     ]
     logger.info(f"返回可用服务列表: {hardcoded_services}")
     return AvailableServicesResponse(services=hardcoded_services)
+
+
+@router.get("/install-status/{instance_id}", response_model=InstallStatusResponse)
+async def get_install_status(instance_id: str):
+    """
+    检查安装进度和状态。
+    """
+    logger.info(f"收到检查安装状态请求，实例ID: {instance_id}")
+
+    # TODO: 实现从数据库或缓存中获取实际的安装状态和进度
+    # 以下为模拟数据
+    mock_services_status = [
+        ServiceInstallStatus(
+            name="napcat",
+            status="installing",
+            progress=50,
+            message="正在安装 NapCat",
+        ),
+        ServiceInstallStatus(
+            name="nonebot-ada",
+            status="installing",
+            progress=30,
+            message="正在安装 NoneBot-ada",
+        ),
+    ]
+
+    # 模拟整体进度，可以根据服务进度计算
+    overall_progress = sum(s.progress for s in mock_services_status) // len(
+        mock_services_status
+    )
+
+    return InstallStatusResponse(
+        status="installing",
+        progress=overall_progress,
+        message="正在安装依赖...",
+        services_install_status=mock_services_status,
+    )
