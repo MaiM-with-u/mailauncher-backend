@@ -104,6 +104,7 @@ async def deploy_maibot(payload: DeployRequest = Body(...)):
                 path=payload.install_path,
                 status=InstanceStatus.STARTING,
                 port=payload.port,
+                qq_number=payload.qq_number,
                 instance_id=instance_id_str,
                 db_session=session,
             )

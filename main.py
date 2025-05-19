@@ -1,13 +1,17 @@
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Response, WebSocket
 from src.utils.logger import get_module_logger
 
 # import sys
 from src.utils.config import global_config
-from src.utils.database_model import initialize_database
+# 修改导入路径: from src.utils.database_model import initialize_database
+from src.utils.database import initialize_database  # <--- 修改此行
+from src.utils.database import get_db_instance  # 确保导入 get_db_instance
 from src.utils.server import global_server
 from src.modules import instance_api
 from src.modules import system  # 添加导入
 from src.modules import deploy_api  # 添加 deploy_api 导入
+from src.modules.websocket_manager import handle_websocket_connection  # Import the new handler
+import asyncio  # 添加 asyncio 导入
 
 logger = get_module_logger("主程序")
 # --- 从 global_config 加载配置 ---
@@ -56,6 +60,18 @@ async def root_dashboard():
 
 # APIRouterV1 上定义的所有路由都将以 API_PREFIX 为前缀
 
+# 添加 WebSocket 路由
+# 注意：路径中的 {session_id} 将被传递给 handle_websocket_connection
+# API_PREFIX 将被应用到这个 WebSocket 路由
+@APIRouterV1.websocket("/ws/{session_id}")
+async def websocket_endpoint(websocket: WebSocket, session_id: str):
+    # 获取数据库实例
+    # 理想情况下，您可以使用 FastAPI 的依赖注入系统来提供数据库会话
+    # 但为了简单起见，我们在这里直接获取它
+    db_instance = get_db_instance()
+    await handle_websocket_connection(websocket, session_id, db_instance)
+
+
 global_server.register_router(APIRouterV1, prefix=API_PREFIX)
 global_server.register_router(instance_api.router, prefix=API_PREFIX)
 global_server.register_router(system.router, prefix=API_PREFIX)  # 注册 system router
@@ -64,28 +80,37 @@ global_server.register_router(
 )  # 注册 deploy_api router，并添加 /deploy 前缀
 logger.info(f"已包含 API 路由，前缀为：{API_PREFIX}")
 
+
 # --- 服务器启动 ---
-if __name__ == "__main__":
-    logger.info(f"正在 http://{HTTP_HOST}:{HTTP_PORT} 上启动 Uvicorn 服务器")
-    logger.info(
-        f"API 文档将位于 http://{HTTP_HOST}:{HTTP_PORT}/docs 和 http://{HTTP_HOST}:{HTTP_PORT}/redoc"
-    )
-    logger.info(
-        f"{API_PREFIX} 下的 WebSocket 端点将使用 ws://{HTTP_HOST}:{HTTP_PORT}{API_PREFIX}/..."
-    )
+async def main():
+    logger.info("正在启动MaiLauncher后端服务器...")
+    logger.info(f"HTTP 和 WebSocket 服务器将在 http://{HTTP_HOST}:{HTTP_PORT} 上启动")
 
     # 初始化数据库
     logger.info("正在初始化数据库...")
     initialize_database()
     logger.info("数据库初始化完成。")
-    # 关于 WebSocket 端口 23457 的说明：
-    # FastAPI 集成了 WebSocket，使其与 HTTP 服务器在同一端口上运行 (在此设置中为端口 {HTTP_PORT})。
-    # 如果您需要在 *不同* 端口 (例如 23457) 上运行 WebSocket 服务器，
-    # 它通常会是一个单独的 Python 应用程序/进程，直接使用像 'websockets' 这样的库，
-    # 并且不会是此 FastAPI 应用程序的路由或 Uvicorn 实例的一部分。
-    # 示例 WebSocket 端点 '/ws/{{client_id}}' 可通过 ws://{HTTP_HOST}:{HTTP_PORT}{API_PREFIX}/ws/{{client_id}} 访问
+
+    # 启动 Uvicorn 服务器
+    from uvicorn import Config, Server
+    # Uvicorn 将同时处理 HTTP 和 WebSocket 请求
+    config = Config(app=global_server.app, host=HTTP_HOST, port=HTTP_PORT, log_level="info", ws="auto")
+    server = Server(config)
+    
+    logger.info("Uvicorn 服务器 (HTTP 和 WebSocket) 正在启动...")
 
     try:
-        global_server.run()
+        # 仅运行 Uvicorn 服务器，它将处理所有请求
+        await server.serve()
     except KeyboardInterrupt:
         logger.info("服务器正在关闭...")
+    finally:
+        logger.info("服务器已关闭。")
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())  # 使用 asyncio.run 运行主异步函数
+    except KeyboardInterrupt:
+        logger.info("主程序被中断。")
+    except Exception as e:
+        logger.error(f"主程序启动时发生未处理的异常: {e}", exc_info=True)

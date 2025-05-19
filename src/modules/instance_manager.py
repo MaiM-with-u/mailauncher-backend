@@ -31,6 +31,7 @@ class Instance:
         port: int,
         id: Optional[int] = None,
         created_at: Optional[datetime.datetime] = None,
+        qq_number: Optional[int] = None,
     ):
         """
         初始化 Instance 对象。
@@ -55,6 +56,7 @@ class Instance:
         self.status: InstanceStatus = status
         self.port: int = port
         self.created_at: datetime.datetime = created_at or datetime.datetime.now()
+        self.qq_number: Optional[int] = qq_number
 
     def to_dict(self) -> Dict[str, Any]:
         """
@@ -72,6 +74,7 @@ class Instance:
             "status": self.status.value,  # 存储枚举值 (字符串)
             "port": self.port,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+            "qq_number": self.qq_number,
         }
 
     @classmethod
@@ -94,6 +97,7 @@ class Instance:
             status=InstanceStatus(db_instance.status),  # 将数据库中的字符串转换为枚举
             port=db_instance.port,
             created_at=db_instance.created_at,
+            qq_number=db_instance.qq_number,
         )
 
 
@@ -128,6 +132,7 @@ class InstanceManager:
         path: str,
         status: InstanceStatus,
         port: int,
+        qq_number: int,
         instance_id: str,
         db_session: Optional[Session] = None,  # 添加可选的 db_session 参数
     ) -> Optional[Instance]:
@@ -158,6 +163,7 @@ class InstanceManager:
             path=path,
             status=status.value,
             port=port,
+            qq_number=qq_number,
         )
 
         if db_session:
