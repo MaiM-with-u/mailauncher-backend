@@ -21,7 +21,7 @@
 {
   "instances": [
     {
-      "id": "a2fe529b51999fc2d45df5196c6c50a46a608fa1", #SHA1 + Salt ID
+      "id": "a2fe529b51999fc2d45df5196c6c50a46a608fa1",
       "name": "maibot-stable-1",
       "status": "running",
       "installedAt": "1747404418536",
