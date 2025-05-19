@@ -71,11 +71,15 @@ class InstallStatusResponse(BaseModel):
 
 
 @router.post("/deploy/deploy", response_model=DeployResponse)  # 修改路径
-async def deploy_maibot(payload: DeployRequest = Body(...)):  # 修改函数签名，移除 version 参数
+async def deploy_maibot(
+    payload: DeployRequest = Body(...),
+):  # 修改函数签名，移除 version 参数
     """
     部署指定版本的 MaiBot。
     """
-    logger.info(f"收到部署请求，版本: {payload.version}, 实例名称: {payload.instance_name}")  # 使用 payload 中的 version
+    logger.info(
+        f"收到部署请求，版本: {payload.version}, 实例名称: {payload.instance_name}"
+    )  # 使用 payload 中的 version
 
     instance_id_str = generate_instance_id(payload.instance_name, payload.install_path)
     logger.info(f"为实例 {payload.instance_name} 生成的 ID: {instance_id_str}")
