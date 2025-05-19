@@ -8,7 +8,7 @@ __pycache__/
 
 data/
 config.toml
-
+.VSCodeCounter/
 # Distribution / packaging
 .Python
 build/
