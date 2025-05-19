@@ -107,13 +107,21 @@ SERVICE_TYPE_MAIN = "main"
 
 
 # 辅助函数：启动 PTY 进程
-async def _start_pty_process(session_id: str, instance_short_id: str, type_part: str) -> bool:
+async def _start_pty_process(
+    session_id: str, instance_short_id: str, type_part: str
+) -> bool:
     async with active_ptys_lock:
-        if session_id in active_ptys and active_ptys[session_id].get("pty") and active_ptys[session_id]["pty"].isalive():
+        if (
+            session_id in active_ptys
+            and active_ptys[session_id].get("pty")
+            and active_ptys[session_id]["pty"].isalive()
+        ):
             logger.info(f"会话 {session_id} 的 PTY 进程已在运行。")
             return True  # 已在运行
 
-    pty_command_str, pty_cwd, _ = await get_pty_command_and_cwd_from_instance(session_id)
+    pty_command_str, pty_cwd, _ = await get_pty_command_and_cwd_from_instance(
+        session_id
+    )
 
     if not pty_command_str:
         logger.error(f"无法确定会话 {session_id} 的 PTY 命令。")
@@ -126,15 +134,17 @@ async def _start_pty_process(session_id: str, instance_short_id: str, type_part:
             if not cmd_to_spawn:
                 raise ValueError("命令字符串 shlex.split 后产生空列表")
         except ValueError as e_shlex:
-            logger.warning(f"会话 {session_id} 的 PTY_COMMAND ('{pty_command_str}') 无法被 shlex 分割: {e_shlex}。将按原样使用。")
+            logger.warning(
+                f"会话 {session_id} 的 PTY_COMMAND ('{pty_command_str}') 无法被 shlex 分割: {e_shlex}。将按原样使用。"
+            )
             cmd_to_spawn = pty_command_str  # type: ignore
 
         pty_process = PtyProcess.spawn(
-            cmd_to_spawn,
-            dimensions=(PTY_ROWS_DEFAULT, PTY_COLS_DEFAULT),
-            cwd=pty_cwd
+            cmd_to_spawn, dimensions=(PTY_ROWS_DEFAULT, PTY_COLS_DEFAULT), cwd=pty_cwd
         )
-        logger.info(f"PTY 进程 (PID: {pty_process.pid}) 已通过 API 为会话 {session_id} 生成。")
+        logger.info(
+            f"PTY 进程 (PID: {pty_process.pid}) 已通过 API 为会话 {session_id} 生成。"
+        )
 
         async with active_ptys_lock:
             active_ptys[session_id] = {
@@ -142,7 +152,7 @@ async def _start_pty_process(session_id: str, instance_short_id: str, type_part:
                 "ws": None,  # API 启动时没有关联的 WebSocket
                 "output_task": None,  # 输出任务将由 websocket_manager 启动
                 "instance_part": instance_short_id,
-                "type_part": type_part
+                "type_part": type_part,
             }
         return True
     except Exception as e:
@@ -154,7 +164,9 @@ async def _start_pty_process(session_id: str, instance_short_id: str, type_part:
 async def _stop_pty_process(session_id: str) -> bool:
     async with active_ptys_lock:
         if session_id not in active_ptys or not active_ptys[session_id].get("pty"):
-            logger.info(f"在 active_ptys 中未找到会话 {session_id} 的 PTY 进程或没有 PTY 对象。")
+            logger.info(
+                f"在 active_ptys 中未找到会话 {session_id} 的 PTY 进程或没有 PTY 对象。"
+            )
             return True  # 如果未找到，则认为已停止
 
         pty_info = active_ptys[session_id]
@@ -302,19 +314,28 @@ async def start_instance(instance_id: str):
             logger.warning(f"启动实例 {instance_id} 的服务 {service_type} 失败。")
 
     if started_any_service:
-        updated_instance = instance_manager.update_instance_status(instance_id, InstanceStatus.RUNNING)
+        updated_instance = instance_manager.update_instance_status(
+            instance_id, InstanceStatus.RUNNING
+        )
         if updated_instance:
             logger.info(f"实例 {instance_id} 状态已更新为“运行中”。")
-            return ActionResponse(success=True, message=f"实例 {instance.name} 组件已启动。")
+            return ActionResponse(
+                success=True, message=f"实例 {instance.name} 组件已启动。"
+            )
         else:
             logger.error(f"更新实例 {instance_id} 状态为“运行中”失败。")
             # 即使数据库更新失败，PTY 可能仍在运行。
-            return ActionResponse(success=True, message=f"实例 {instance.name} 组件已启动，但状态更新失败。")
+            return ActionResponse(
+                success=True,
+                message=f"实例 {instance.name} 组件已启动，但状态更新失败。",
+            )
     else:
         # 如果没有服务启动，我们可能不想更改总体状态，除非它已经停止。
         # 为简单起见，如果没有任何启动，则报告启动失败。
         logger.warning(f"启动实例 {instance_id} 的任何服务失败。")
-        return ActionResponse(success=False, message=f"启动实例 {instance.name} 的任何组件失败。")
+        return ActionResponse(
+            success=False, message=f"启动实例 {instance.name} 的任何组件失败。"
+        )
 
 
 @router.get("/instance/{instance_id}/stop", response_model=ActionResponse)
@@ -329,7 +350,9 @@ async def stop_instance(instance_id: str):
         session_id = f"{instance_id}_{service_type}"
         if not await _stop_pty_process(session_id):
             all_services_stopped = False
-            logger.warning(f"未能完全停止实例 {instance_id} 的服务 {service_type}，或者它没有运行。")
+            logger.warning(
+                f"未能完全停止实例 {instance_id} 的服务 {service_type}，或者它没有运行。"
+            )
         else:
             logger.info(f"实例 {instance_id} 的服务 {service_type} 已停止或没有运行。")
 
@@ -337,20 +360,29 @@ async def stop_instance(instance_id: str):
     # _stop_pty_process 如果已停止或成功停止，则返回 True。
     # 因此，如果 all_services_stopped 为 True，则所有相关的 PTY 现在都被视为非活动状态。
     if all_services_stopped:
-        updated_instance = instance_manager.update_instance_status(instance_id, InstanceStatus.STOPPED)
+        updated_instance = instance_manager.update_instance_status(
+            instance_id, InstanceStatus.STOPPED
+        )
         if updated_instance:
             logger.info(f"实例 {instance_id} 状态已更新为“已停止”。")
-            return ActionResponse(success=True, message=f"实例 {instance.name} 组件已停止。")
+            return ActionResponse(
+                success=True, message=f"实例 {instance.name} 组件已停止。"
+            )
         else:
             logger.error(f"更新实例 {instance_id} 状态为“已停止”失败。")
-            return ActionResponse(success=True, message=f"实例 {instance.name} 组件已停止，但状态更新失败。")
+            return ActionResponse(
+                success=True,
+                message=f"实例 {instance.name} 组件已停止，但状态更新失败。",
+            )
     else:
         # 如果某些服务未能停止，实例可能处于部分状态。
         # 我们反映并非所有内容都可以确认为已停止。
         # 总体实例状态可能保持“运行中”或不确定状态。
         # 目前，如果并非所有服务都完全停止，则不要更改状态。
         logger.warning(f"无法确认实例 {instance_id} 的所有服务都已停止。")
-        return ActionResponse(success=False, message=f"无法确认实例 {instance.name} 的所有组件都已停止。")
+        return ActionResponse(
+            success=False, message=f"无法确认实例 {instance.name} 的所有组件都已停止。"
+        )
 
 
 @router.get("/instance/{instance_id}/restart", response_model=ActionResponse)
@@ -366,26 +398,48 @@ async def restart_instance(instance_id: str):
     logger.info(f"正在停止实例 {instance_id} 的服务 {service_type}...")
     stopped = await _stop_pty_process(session_id)
     if stopped:
-        logger.info(f"实例 {instance_id} 的服务 {service_type} 已停止。正在等待片刻后重启...")
+        logger.info(
+            f"实例 {instance_id} 的服务 {service_type} 已停止。正在等待片刻后重启..."
+        )
         await asyncio.sleep(1)  # 短暂暂停
 
         logger.info(f"正在启动实例 {instance_id} 的服务 {service_type}...")
         started = await _start_pty_process(session_id, instance_id, service_type)
         if started:
-            updated_instance = instance_manager.update_instance_status(instance_id, InstanceStatus.RUNNING)
+            updated_instance = instance_manager.update_instance_status(
+                instance_id, InstanceStatus.RUNNING
+            )
             if updated_instance:
-                logger.info(f"实例 {instance_id} (主服务) 已重启并且状态已更新为“运行中”。")
+                logger.info(
+                    f"实例 {instance_id} (主服务) 已重启并且状态已更新为“运行中”。"
+                )
             else:
-                logger.error(f"实例 {instance_id} (主服务) 已重启，但状态更新为“运行中”失败。")
-            return ActionResponse(success=True, message=f"实例 {instance.name} (主服务) 已重启。")
+                logger.error(
+                    f"实例 {instance_id} (主服务) 已重启，但状态更新为“运行中”失败。"
+                )
+            return ActionResponse(
+                success=True, message=f"实例 {instance.name} (主服务) 已重启。"
+            )
         else:
             logger.error(f"停止实例 {instance_id} 的服务 {service_type} 后启动失败。")
             # 如果启动失败，实例状态可能为“已停止”。
             # 如果它正在运行并且未能重新启动，则考虑将其设置为“已停止”。
             current_db_instance = instance_manager.get_instance(instance_id)
-            if current_db_instance and current_db_instance.status == InstanceStatus.RUNNING:
-                instance_manager.update_instance_status(instance_id, InstanceStatus.STOPPED)
-            return ActionResponse(success=False, message=f"重启实例 {instance.name} (主服务) 失败。停止后无法启动。")
+            if (
+                current_db_instance
+                and current_db_instance.status == InstanceStatus.RUNNING
+            ):
+                instance_manager.update_instance_status(
+                    instance_id, InstanceStatus.STOPPED
+                )
+            return ActionResponse(
+                success=False,
+                message=f"重启实例 {instance.name} (主服务) 失败。停止后无法启动。",
+            )
     else:
-        logger.error(f"作为重启的一部分，停止实例 {instance_id} 的服务 {service_type} 失败。")
-        return ActionResponse(success=False, message=f"重启实例 {instance.name} (主服务) 失败。无法停止。")
+        logger.error(
+            f"作为重启的一部分，停止实例 {instance_id} 的服务 {service_type} 失败。"
+        )
+        return ActionResponse(
+            success=False, message=f"重启实例 {instance.name} (主服务) 失败。无法停止。"
+        )

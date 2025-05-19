@@ -5,10 +5,10 @@ from typing import List, Optional
 
 # PtyLog 模型现在从 database_model.py 导入
 # 确保 Services 也被导入
-from src.utils.database_model import PtyLog, Services 
-from src.utils.logger import get_module_logger # 添加 logger 导入
+from src.utils.database_model import PtyLog, Services
+from src.utils.logger import get_module_logger  # 添加 logger 导入
 
-install(extra_lines=3) # rich traceback 安装，用于美化异常输出
+install(extra_lines=3)  # rich traceback 安装，用于美化异常输出
 
 # 定义数据库文件路径
 ROOT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -21,7 +21,8 @@ os.makedirs(_DB_DIR, exist_ok=True)
 # SQLModel 引擎
 sqlite_url = f"sqlite:///{_DB_FILE}"
 engine = create_engine(
-    sqlite_url, echo=False # echo=True 用于在开发时打印SQL语句，生产环境可以关闭
+    sqlite_url,
+    echo=False,  # echo=True 用于在开发时打印SQL语句，生产环境可以关闭
 )
 
 
@@ -33,6 +34,7 @@ def create_db_and_tables():
     # 为了明确，可以确保 database_model 在调用此函数之前已被导入。
     # 例如，在 main.py 或 server.py 的顶部导入。
     SQLModel.metadata.create_all(engine)
+
 
 # PTY 日志相关方法
 class Database:
@@ -47,14 +49,14 @@ class Database:
             # 添加新日志
             db_log = PtyLog(session_id=session_id, log_content=log_content)
             session.add(db_log)
-            
+
             # 如果需要，修剪旧日志
             # 计算当前会话的日志数量
             # SQLAlchemy 核心方式 (更高效，但需要导入 func):
             # from sqlalchemy import func
             # count_statement = select(func.count(PtyLog.id)).where(PtyLog.session_id == session_id)
             # current_log_count = session.exec(count_statement).scalar_one_or_none() or 0
-            
+
             # 使用 select().all() 然后 len() 的简化方式
             statement_count = select(PtyLog).where(PtyLog.session_id == session_id)
             results_count = session.exec(statement_count).all()
@@ -66,14 +68,14 @@ class Database:
                 statement_oldest = (
                     select(PtyLog)
                     .where(PtyLog.session_id == session_id)
-                    .order_by(PtyLog.timestamp) # 最旧的在前
+                    .order_by(PtyLog.timestamp)  # 最旧的在前
                     .limit(num_to_delete)
                 )
                 logs_to_delete = session.exec(statement_oldest).all()
                 for log_item in logs_to_delete:
                     session.delete(log_item)
-            
-            session.commit() # 提交事务
+
+            session.commit()  # 提交事务
 
     async def get_pty_logs(self, session_id: str, limit: int) -> List[PtyLog]:
         """
@@ -83,23 +85,29 @@ class Database:
             statement = (
                 select(PtyLog)
                 .where(PtyLog.session_id == session_id)
-                .order_by(PtyLog.timestamp.desc()) # 最新的在前
+                .order_by(PtyLog.timestamp.desc())  # 最新的在前
                 .limit(limit)
             )
             results = session.exec(statement).all()
-            return results[::-1] # 返回按时间顺序排列的结果 (最旧的在前)
+            return results[::-1]  # 返回按时间顺序排列的结果 (最旧的在前)
 
-    async def get_service_details(self, instance_id: str, service_name: str) -> Optional[Services]:
+    async def get_service_details(
+        self, instance_id: str, service_name: str
+    ) -> Optional[Services]:
         """
         从数据库检索特定实例和服务的详细信息。
         """
         with Session(self.engine) as session:
-            statement = select(Services).where(Services.instance_id == instance_id, Services.name == service_name)
+            statement = select(Services).where(
+                Services.instance_id == instance_id, Services.name == service_name
+            )
             return session.exec(statement).first()
+
 
 # 全局数据库实例 (或者通过依赖注入管理)
 # 为简单起见，这里创建一个全局实例，但在 FastAPI 中通常使用 Depends
 _db_instance: Optional[Database] = None
+
 
 def get_db_instance() -> Database:
     """获取全局数据库实例。如果不存在则创建。"""
@@ -108,8 +116,10 @@ def get_db_instance() -> Database:
         _db_instance = Database(engine)
     return _db_instance
 
+
 # 将 initialize_database 函数移到这里
-logger_db = get_module_logger("数据库") # 为 database.py 创建一个 logger 实例
+logger_db = get_module_logger("数据库")  # 为 database.py 创建一个 logger 实例
+
 
 def initialize_database():
     """初始化数据库并创建表（如果它们尚不存在）。"""

@@ -3,6 +3,7 @@ from src.utils.logger import get_module_logger
 
 # import sys
 from src.utils.config import global_config
+
 # 修改导入路径: from src.utils.database_model import initialize_database
 from src.utils.database import initialize_database  # <--- 修改此行
 from src.utils.database import get_db_instance  # 确保导入 get_db_instance
@@ -10,7 +11,9 @@ from src.utils.server import global_server
 from src.modules import instance_api
 from src.modules import system  # 添加导入
 from src.modules import deploy_api  # 添加 deploy_api 导入
-from src.modules.websocket_manager import handle_websocket_connection  # Import the new handler
+from src.modules.websocket_manager import (
+    handle_websocket_connection,
+)  # Import the new handler
 import asyncio  # 添加 asyncio 导入
 
 logger = get_module_logger("主程序")
@@ -60,6 +63,7 @@ async def root_dashboard():
 
 # APIRouterV1 上定义的所有路由都将以 API_PREFIX 为前缀
 
+
 # 添加 WebSocket 路由
 # 注意：路径中的 {session_id} 将被传递给 handle_websocket_connection
 # API_PREFIX 将被应用到这个 WebSocket 路由
@@ -93,10 +97,17 @@ async def main():
 
     # 启动 Uvicorn 服务器
     from uvicorn import Config, Server
+
     # Uvicorn 将同时处理 HTTP 和 WebSocket 请求
-    config = Config(app=global_server.app, host=HTTP_HOST, port=HTTP_PORT, log_level="info", ws="auto")
+    config = Config(
+        app=global_server.app,
+        host=HTTP_HOST,
+        port=HTTP_PORT,
+        log_level="info",
+        ws="auto",
+    )
     server = Server(config)
-    
+
     logger.info("Uvicorn 服务器 (HTTP 和 WebSocket) 正在启动...")
 
     try:
@@ -106,6 +117,7 @@ async def main():
         logger.info("服务器正在关闭...")
     finally:
         logger.info("服务器已关闭。")
+
 
 if __name__ == "__main__":
     try:
