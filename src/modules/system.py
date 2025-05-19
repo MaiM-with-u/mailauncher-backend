@@ -9,9 +9,11 @@ from src.utils.logger import get_module_logger  # 添加 logger 导入
 router = APIRouter()
 logger = get_module_logger("系统API")  # 初始化 logger
 
+
 class HealthCheckResponse(BaseModel):
     status: str
     time: str
+
 
 # Pydantic Models for System Metrics
 class SystemInfo(BaseModel):
@@ -21,6 +23,7 @@ class SystemInfo(BaseModel):
     machine: str
     processor: str
 
+
 class MemoryUsage(BaseModel):
     total_mb: float
     available_mb: float
@@ -28,11 +31,13 @@ class MemoryUsage(BaseModel):
     used_mb: float
     free_mb: float
 
+
 class DiskUsage(BaseModel):
     total_gb: float
     used_gb: float
     free_gb: float
     percent: float
+
 
 class SystemMetricsData(BaseModel):
     system_info: SystemInfo
@@ -41,9 +46,11 @@ class SystemMetricsData(BaseModel):
     memory_usage: MemoryUsage
     disk_usage_root: DiskUsage
 
+
 class SystemMetricsResponse(BaseModel):
     status: str
     data: SystemMetricsData
+
 
 @router.get("/system/health", response_model=HealthCheckResponse)
 async def health_check():
@@ -53,6 +60,7 @@ async def health_check():
     logger.info("收到健康检查请求")  # 添加日志
     current_time = datetime.datetime.now(datetime.timezone.utc).isoformat()
     return HealthCheckResponse(status="success", time=current_time)
+
 
 @router.get("/system/metrics", response_model=SystemMetricsResponse)
 async def get_system_metrics():
@@ -67,7 +75,9 @@ async def get_system_metrics():
         release=uname.release,
         version=uname.version,
         machine=uname.machine,
-        processor=uname.processor if hasattr(uname, 'processor') else 'N/A'  # uname.processor might not be available on all systems
+        processor=uname.processor
+        if hasattr(uname, "processor")
+        else "N/A",  # uname.processor might not be available on all systems
     )
 
     # Python Version
@@ -87,7 +97,7 @@ async def get_system_metrics():
     )
 
     # Disk Usage (Root Partition)
-    disk = psutil.disk_usage('/')
+    disk = psutil.disk_usage("/")
     disk_usage_root = DiskUsage(
         total_gb=round(disk.total / (1024 * 1024 * 1024), 2),
         used_gb=round(disk.used / (1024 * 1024 * 1024), 2),
@@ -95,7 +105,9 @@ async def get_system_metrics():
         percent=disk.percent,
     )
 
-    logger.debug(f"系统指标数据: cpu={cpu_usage_percent}%, mem={memory_usage.percent}%, disk={disk_usage_root.percent}%")  # 添加日志
+    logger.debug(
+        f"系统指标数据: cpu={cpu_usage_percent}%, mem={memory_usage.percent}%, disk={disk_usage_root.percent}%"
+    )  # 添加日志
     return SystemMetricsResponse(
         status="success",
         data=SystemMetricsData(
