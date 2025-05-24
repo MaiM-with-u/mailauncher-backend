@@ -124,7 +124,7 @@ async def get_pty_command_and_cwd_from_instance(
     return pty_command, pty_cwd, status_value
 
 
-async def pty_output_to_websocket_and_db(
+async def pty_output_to_websocket(
     session_id: str, pty_process: PtyProcess, websocket: WebSocket, db: Database
 ):
     """
@@ -258,7 +258,7 @@ async def handle_websocket_connection(
             }
 
         read_task = asyncio.create_task(
-            pty_output_to_websocket_and_db(session_id, pty_process, websocket, db)
+            pty_output_to_websocket(session_id, pty_process, websocket, db)
         )
         async with active_ptys_lock:
             if session_id in active_ptys:
