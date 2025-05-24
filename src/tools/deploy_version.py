@@ -4,8 +4,9 @@ import subprocess
 from pathlib import Path
 from src.utils.logger import get_module_logger
 from src.modules.instance_manager import instance_manager
+
 # Import List for type hinting
-from typing import List, Dict, Any 
+from typing import List, Dict, Any
 
 logger = get_module_logger("版本部署工具")
 
@@ -15,9 +16,13 @@ class DeployManager:
         self.primary_repo_url = "https://github.com/MaiM-with-u/MaiBot"
         self.secondary_repo_url = "https://gitee.com/DrSmooth/MaiBot"
         # 服务特定的仓库 URL
-        self.napcat_ada_primary_repo_url = "https://github.com/MaiM-with-u/MaiBot-Napcat-Adapter"
-        self.napcat_ada_secondary_repo_url = "https://gitee.com/DrSmooth/MaiBot-Napcat-Adapter"
-        
+        self.napcat_ada_primary_repo_url = (
+            "https://github.com/MaiM-with-u/MaiBot-Napcat-Adapter"
+        )
+        self.napcat_ada_secondary_repo_url = (
+            "https://gitee.com/DrSmooth/MaiBot-Napcat-Adapter"
+        )
+
         self.project_root = Path(__file__).resolve().parent.parent.parent
         self.template_dir = self.project_root / "template"
 
@@ -71,7 +76,7 @@ class DeployManager:
                     f"成功从 {repo_url} 克隆版本 {version_tag} 到 {deploy_path}"
                 )
                 git_dir = deploy_path / ".git"
-                if git_dir.is_dir(): # Sourcery suggestion applied
+                if git_dir.is_dir():  # Sourcery suggestion applied
                     logger.info(f"删除克隆下来的 .git 目录: {git_dir}")
                     shutil.rmtree(git_dir)
                 return True
@@ -98,7 +103,10 @@ class DeployManager:
             return False
 
     def deploy_version(
-        self, version_tag: str, instance_id: str, services_to_install: List[Dict[str, Any]]
+        self,
+        version_tag: str,
+        instance_id: str,
+        services_to_install: List[Dict[str, Any]],
     ) -> bool:
         logger.info(f"开始为实例 ID {instance_id} 部署版本 {version_tag}")
 
@@ -200,21 +208,25 @@ class DeployManager:
         napcat_ada_service_config = None
 
         for service_config in services_to_install:
-            if service_config.get('name') == "napcat-ada":
+            if service_config.get("name") == "napcat-ada":
                 found_napcat_ada = True
                 napcat_ada_service_config = service_config
                 break
-        
+
         if found_napcat_ada and napcat_ada_service_config:
             logger.info(f"找到服务 'napcat-ada'，开始为其部署。(实例ID: {instance_id})")
-            service_path_str = napcat_ada_service_config.get('path')
+            service_path_str = napcat_ada_service_config.get("path")
             if not service_path_str:
-                logger.error(f"'napcat-ada' 服务配置缺少 'path'。(实例ID: {instance_id})")
-                shutil.rmtree(deploy_path, ignore_errors=True) # 清理主路径
+                logger.error(
+                    f"'napcat-ada' 服务配置缺少 'path'。(实例ID: {instance_id})"
+                )
+                shutil.rmtree(deploy_path, ignore_errors=True)  # 清理主路径
                 return False
 
             service_deploy_path = Path(service_path_str).resolve()
-            logger.info(f"服务 'napcat-ada' 将部署到: {service_deploy_path} (实例ID: {instance_id})")
+            logger.info(
+                f"服务 'napcat-ada' 将部署到: {service_deploy_path} (实例ID: {instance_id})"
+            )
 
             # 克隆服务代码 - 使用 "main" 分支
             cloned_service_successfully = self._run_git_clone(
@@ -232,15 +244,17 @@ class DeployManager:
                 logger.error(
                     f"从主仓库和备用仓库均克隆 'napcat-ada' 服务失败。(实例ID: {instance_id})"
                 )
-                if service_deploy_path.exists(): # 清理服务路径
+                if service_deploy_path.exists():  # 清理服务路径
                     shutil.rmtree(service_deploy_path, ignore_errors=True)
                 shutil.rmtree(deploy_path, ignore_errors=True)  # 清理主路径
                 return False
-            
-            logger.info(f"'napcat-ada' 服务代码已成功克隆到 {service_deploy_path} (实例ID: {instance_id})")
+
+            logger.info(
+                f"'napcat-ada' 服务代码已成功克隆到 {service_deploy_path} (实例ID: {instance_id})"
+            )
 
             # 复制服务配置文件
-            service_template_name = "template_config.toml" # 根据用户要求
+            service_template_name = "template_config.toml"  # 根据用户要求
             service_final_name = "config.toml"
             source_service_config = self.template_dir / service_template_name
             destination_service_config = service_deploy_path / service_final_name
@@ -250,7 +264,7 @@ class DeployManager:
                     logger.error(
                         f"服务模板配置文件 {source_service_config} 不存在。(实例ID: {instance_id})"
                     )
-                    if service_deploy_path.exists(): 
+                    if service_deploy_path.exists():
                         shutil.rmtree(service_deploy_path, ignore_errors=True)
                     shutil.rmtree(deploy_path, ignore_errors=True)
                     return False
@@ -262,18 +276,21 @@ class DeployManager:
                 logger.error(
                     f"复制服务配置文件 {source_service_config} 到 {destination_service_config} 失败: {e} (实例ID: {instance_id})"
                 )
-                if service_deploy_path.exists(): 
+                if service_deploy_path.exists():
                     shutil.rmtree(service_deploy_path, ignore_errors=True)
                 shutil.rmtree(deploy_path, ignore_errors=True)
                 return False
             logger.info(f"'napcat-ada' 服务部署成功。(实例ID: {instance_id})")
         elif not found_napcat_ada:
-            logger.info(f"未在安装列表中找到 'napcat-ada' 服务，跳过服务部署步骤。(实例ID: {instance_id})")
+            logger.info(
+                f"未在安装列表中找到 'napcat-ada' 服务，跳过服务部署步骤。(实例ID: {instance_id})"
+            )
         # 如果 found_napcat_ada 为 True 但 napcat_ada_service_config 为 None (例如 path 缺失)，则已在上面处理
 
         logger.info(
             f"版本 {version_tag} 及所选服务已成功部署到 {deploy_path} (实例ID: {instance_id})"
         )
         return True
+
 
 deploy_manager = DeployManager()

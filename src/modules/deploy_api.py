@@ -101,13 +101,17 @@ async def deploy_maibot(payload: DeployRequest = Body(...)):
         # 将 payload.install_path 替换为 instance_id_str
         # 并且传入 payload.install_services
         deploy_success = deploy_manager.deploy_version(
-            payload.version, 
-            instance_id_str, 
-            [service.model_dump() for service in payload.install_services] # 将Pydantic模型转换为字典列表
+            payload.version,
+            instance_id_str,
+            [
+                service.model_dump() for service in payload.install_services
+            ],  # 将Pydantic模型转换为字典列表
         )
 
         if not deploy_success:
-            logger.error(f"使用 deploy_manager 部署版本 {payload.version} 到实例 {instance_id_str} 失败。")
+            logger.error(
+                f"使用 deploy_manager 部署版本 {payload.version} 到实例 {instance_id_str} 失败。"
+            )
             # 注意：deploy_version 内部应该已经处理了部分创建文件的清理工作
             raise HTTPException(
                 status_code=500,
