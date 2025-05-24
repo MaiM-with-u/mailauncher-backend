@@ -27,6 +27,7 @@ class ServiceInstallConfig(BaseModel):
     name: str = Field(..., description="服务名称")
     path: str = Field(..., description="服务安装路径")
     port: int = Field(..., description="服务端口")
+    run_cmd: str = Field(..., description="服务运行命令")
 
 
 class DeployRequest(BaseModel):
@@ -152,6 +153,7 @@ async def deploy_maibot(payload: DeployRequest = Body(...)):
                     path=service_config.path,
                     status="pending",
                     port=service_config.port,
+                    run_cmd=service_config.run_cmd,  # 添加 run_cmd
                 )
                 session.add(db_service)
 

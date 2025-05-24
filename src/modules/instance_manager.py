@@ -221,41 +221,53 @@ class InstanceManager:
             logger.error(f"获取所有实例时出错: {e}")
             return []
 
-    def get_instance_services(self, instance_id: str) -> List[str]:
+    def get_instance_services(self, instance_id: str) -> List[Dict[str, Any]]:  # Changed return type
         """
-        根据实例ID从数据库中检索该实例安装的所有服务的名称列表。
+        根据实例ID从数据库中检索该实例安装的所有服务的详细信息列表。
 
         参数:
             instance_id (str): 要检索服务的实例的唯一ID。
 
         返回:
-            List[str]: 包含所有服务名称的字符串列表。如果找不到实例或发生错误，则返回空列表。
+            List[Dict[str, Any]]: 包含所有服务详细信息的字典列表。
+                                    每个字典包含: "id", "instance_id", "name", "path", "run_cmd", "status", "port"。
+                                    如果找不到实例或发生错误，则返回空列表。
         """
-        service_names: List[str] = []
+        services_details: List[Dict[str, Any]] = []  # Changed variable name and type
         try:
             with Session(engine) as session:
-                # 首先检查实例是否存在，虽然此函数主要关注服务，但这是一个好习惯
+                # 首先检查实例是否存在
                 instance_exists_statement = select(Instances).where(
                     Instances.instance_id == instance_id
                 )
                 instance_db = session.exec(instance_exists_statement).first()
                 if not instance_db:
-                    logger.warning(f"尝试获取服务列表失败：未找到实例 {instance_id}。")
+                    logger.warning(f"尝试获取服务详细列表失败：未找到实例 {instance_id}。")
                     return []
 
                 # 获取与 instance_id 关联的所有服务
-                statement = select(Services.name).where(
+                statement = select(Services).where(  # Changed to select(Services)
                     Services.instance_id == instance_id
                 )
-                results = session.exec(statement).all()
-                service_names = [
-                    name for name in results
-                ]  # results is a list of service names
-                logger.info(f"成功检索到实例 {instance_id} 的服务列表: {service_names}")
+                db_services = session.exec(statement).all()  # Returns List[Services]
+                
+                services_details = [
+                    {
+                        "id": service.id,
+                        "instance_id": service.instance_id,
+                        "name": service.name,
+                        "path": service.path,
+                        "run_cmd": service.run_cmd,
+                        "status": service.status,
+                        "port": service.port,
+                    }
+                    for service in db_services
+                ]
+                logger.info(f"成功检索到实例 {instance_id} 的服务详细列表: {services_details}") # Updated log message
         except Exception as e:
-            logger.error(f"获取实例 {instance_id} 的服务列表时出错: {e}")
+            logger.error(f"获取实例 {instance_id} 的服务详细列表时出错: {e}") # Updated log message
             return []  # Return empty list on error
-        return service_names
+        return services_details
 
     def update_instance_status(
         self, instance_id: str, new_status: InstanceStatus

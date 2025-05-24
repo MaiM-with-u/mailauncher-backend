@@ -25,7 +25,6 @@ class DeployManager:
         )
 
         self.project_root = Path(__file__).resolve().parent.parent.parent
-        self.template_dir = self.project_root / "template"
 
     def _run_git_clone(
         self, repo_url: str, version_tag: str, deploy_path: Path
@@ -58,7 +57,9 @@ class DeployManager:
                 logger.error(f"清空部署路径 {deploy_path} 失败: {e}")
                 return False
 
+        logger.info(f"准备在 {deploy_path} 创建目录（如果不存在）。")
         deploy_path.mkdir(parents=True, exist_ok=True)
+        logger.info(f"目录 {deploy_path} 已确认存在。")
 
         clone_command = [
             "git",
@@ -70,9 +71,13 @@ class DeployManager:
             repo_url,
             str(deploy_path),  # 将仓库内容直接克隆到 deploy_path
         ]
+        logger.info(
+            f"准备执行 Git clone 命令: {' '.join(clone_command)} (版本: {version_tag})")
         logger.info(f"尝试从 {repo_url} 克隆版本 {version_tag} 到 {deploy_path}...")
+        logger.debug(f"执行的 Git 命令: {' '.join(clone_command)}")
 
         try:
+            logger.info(f"开始执行 Git clone 命令...")
             process = subprocess.Popen(
                 clone_command,
                 stdout=subprocess.PIPE,
@@ -82,15 +87,32 @@ class DeployManager:
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
             stdout, stderr = process.communicate(timeout=300)
+            logger.info(f"Git clone 命令执行完毕。返回码: {process.returncode}")
 
             if process.returncode == 0:
                 logger.info(
                     f"成功从 {repo_url} 克隆版本 {version_tag} 到 {deploy_path}"
                 )
+                try:
+                    cloned_contents = os.listdir(deploy_path)
+                    logger.info(f"克隆后的目录 {deploy_path} 内容: {cloned_contents}")
+                except Exception as e_list:
+                    logger.error(f"列出目录 {deploy_path} 内容失败: {e_list}")
+
                 git_dir = deploy_path / ".git"
                 if git_dir.is_dir():  # Sourcery suggestion applied
-                    logger.info(f"删除克隆下来的 .git 目录: {git_dir}")
-                    shutil.rmtree(git_dir, onexc=self._handle_remove_readonly) # MODIFIED: Added onexc handler
+                    logger.info(f"准备删除克隆下来的 .git 目录: {git_dir}")
+                    try:
+                        shutil.rmtree(git_dir, onexc=self._handle_remove_readonly) # MODIFIED: Added onexc handler
+                        logger.info(f"成功删除 .git 目录: {git_dir}")
+                    except Exception as e_rm_git:
+                        logger.error(f"删除 .git 目录 {git_dir} 失败: {e_rm_git}")
+                        #  即使删除 .git 失败，也可能需要根据情况决定是否返回 True 或 False
+                        #  目前，如果删除 .git 失败，我们仍然认为克隆的主要部分是成功的，但记录错误。
+                        #  如果删除 .git 是关键步骤，则应返回 False
+                        pass #  或者 return False，取决于业务逻辑
+                else:
+                    logger.warning(f"克隆完成后未找到 .git 目录: {git_dir}")
                 return True
             else:
                 logger.error(
@@ -105,8 +127,10 @@ class DeployManager:
         except subprocess.TimeoutExpired:
             logger.error(f"Git 克隆操作超时 ({repo_url}, 版本: {version_tag})。")
             if process:
+                logger.info(f"由于超时，正在终止 Git 进程 (PID: {process.pid if hasattr(process, 'pid') else 'N/A'}) ")
                 process.kill()
                 process.communicate()
+                logger.info(f"Git 进程已终止。")
             return False
         except Exception as e:
             logger.error(
@@ -178,6 +202,7 @@ class DeployManager:
         logger.info(f"代码已成功克隆到 {resolved_deploy_path} (实例ID: {instance_id})")
 
         config_dir = resolved_deploy_path / "config"
+        template_dir = resolved_deploy_path / "template"
         try:
             config_dir.mkdir(parents=True, exist_ok=True)
             logger.info(f"成功创建/确认文件夹: {config_dir} (实例ID: {instance_id})")
@@ -190,10 +215,10 @@ class DeployManager:
 
         template_files_to_copy = {
             "bot_config_template.toml": "bot_config.toml",
-            "Ipmm_config_template.toml": "Ipmm_config.toml",
+            "lpmm_config_template.toml": "lpmm_config.toml",
         }
         for template_name, final_name in template_files_to_copy.items():
-            source_file = self.template_dir / template_name
+            source_file = template_dir / template_name
             destination_file = config_dir / final_name
             try:
                 if not source_file.exists():
@@ -213,7 +238,7 @@ class DeployManager:
                 shutil.rmtree(resolved_deploy_path, ignore_errors=True)  # 清理
                 return False
 
-        env_template_file = self.template_dir / "template.env"
+        env_template_file = template_dir/ "template.env"
         env_final_file = resolved_deploy_path / ".env"
         try:
             if not env_template_file.exists():
