@@ -16,6 +16,7 @@ from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 import httpx
 from src.tools.deploy_version import deploy_manager  # 导入部署管理器
+from pathlib import Path  # Add Path import
 
 logger = get_module_logger("部署API")  # 修改 logger 名称
 router = APIRouter()
@@ -81,7 +82,7 @@ async def deploy_maibot(payload: DeployRequest = Body(...)):
         f"收到部署请求，版本: {payload.version}, 实例名称: {payload.instance_name}"
     )
 
-    instance_id_str = generate_instance_id(payload.instance_name, payload.install_path)
+    instance_id_str = generate_instance_id(payload.instance_name)
     logger.info(f"为实例 {payload.instance_name} 生成的 ID: {instance_id_str}")
 
     with Session(engine) as session:
@@ -100,8 +101,10 @@ async def deploy_maibot(payload: DeployRequest = Body(...)):
         # 使用 deploy_manager 执行实际部署操作
         # 将 payload.install_path 替换为 instance_id_str
         # 并且传入 payload.install_services
+        deploy_path = Path(payload.install_path)  # Create Path object for deploy_path
         deploy_success = deploy_manager.deploy_version(
             payload.version,
+            deploy_path,  # Pass deploy_path directly
             instance_id_str,
             [
                 service.model_dump() for service in payload.install_services

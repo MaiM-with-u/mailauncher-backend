@@ -212,7 +212,7 @@
 ```json
 {
   "instance_name": "maibot-instance-1",
-  "installServices":[
+  "install_services":[
     {
       "name": "napcat",
       "path": "D:\\MaiBot\\MaiBot-1\\napcat",

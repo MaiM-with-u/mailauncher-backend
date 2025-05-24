@@ -3,7 +3,8 @@ import shutil
 import subprocess
 from pathlib import Path
 from src.utils.logger import get_module_logger
-from src.modules.instance_manager import instance_manager
+import stat  # For file permissions
+import errno # For error codes
 
 # Import List for type hinting
 from typing import List, Dict, Any
@@ -36,10 +37,21 @@ class DeployManager:
         if deploy_path.exists() and any(deploy_path.iterdir()):
             logger.warning(f"部署路径 {deploy_path} 已存在且非空。正在尝试清空...")
             try:
+                # Enhanced directory clearing
                 for item in deploy_path.iterdir():
                     if item.is_dir():
-                        shutil.rmtree(item)
+                        # Attempt to remove read-only flags from .git directory contents
+                        if item.name == ".git":
+                            for root, dirs, files in os.walk(item, topdown=False):
+                                for name in files:
+                                    filename = os.path.join(root, name)
+                                    os.chmod(filename, stat.S_IWUSR)
+                                for name in dirs:
+                                    os.chmod(os.path.join(root, name), stat.S_IWUSR)
+                        shutil.rmtree(item, onexc=self._handle_remove_readonly)
                     else:
+                        if not os.access(item, os.W_OK):
+                            os.chmod(item, stat.S_IWUSR)
                         item.unlink()
                 logger.info(f"已清空已存在的部署路径 {deploy_path}")
             except Exception as e:
@@ -78,11 +90,11 @@ class DeployManager:
                 git_dir = deploy_path / ".git"
                 if git_dir.is_dir():  # Sourcery suggestion applied
                     logger.info(f"删除克隆下来的 .git 目录: {git_dir}")
-                    shutil.rmtree(git_dir)
+                    shutil.rmtree(git_dir, onexc=self._handle_remove_readonly) # MODIFIED: Added onexc handler
                 return True
             else:
                 logger.error(
-                    f"从 {repo_url} 克隆失败 (版本: {version_tag})。返回码: {process.returncode}"
+                    f"从 {repo_url} 克 clone 失败 (版本: {version_tag})。返回码: {process.returncode}"
                 )
                 logger.error(f"Git Stdout: {stdout.strip()}")
                 logger.error(f"Git Stderr: {stderr.strip()}")
@@ -102,50 +114,70 @@ class DeployManager:
             )
             return False
 
+    def _handle_remove_readonly(self, func, path, exc_info):
+        """
+        Error handler for shutil.rmtree.
+
+        If the error is due to an access error (read only file)
+        it attempts to add write permission and then retries the
+        remove. If the error is for another reason it re-raises
+        the error.
+
+        Note: exc_info is now a required parameter for onexc.
+        """
+        # Check if file access error
+        # exc_info[0] is the exception type, exc_info[1] is the exception instance
+        exc_type, exc_instance, _ = exc_info # Unpack the exc_info tuple
+        if isinstance(exc_instance, PermissionError):
+            if not os.access(path, os.W_OK):
+                # Try to change the perm
+                os.chmod(path, stat.S_IWUSR)
+                # Retry the function
+                func(path)
+            else:
+                # Re-raise the error if it's not a permission issue we can fix
+                raise exc_instance # Raise the original exception instance
+        else:
+            # Re-raise other errors
+            raise exc_instance # Raise the original exception instance
+
     def deploy_version(
         self,
         version_tag: str,
+        deploy_path: Path,  # MODIFIED: Accept deploy_path directly
         instance_id: str,
         services_to_install: List[Dict[str, Any]],
     ) -> bool:
-        logger.info(f"开始为实例 ID {instance_id} 部署版本 {version_tag}")
+        # MODIFIED: Updated log message and use resolved deploy_path
+        resolved_deploy_path = deploy_path.resolve()
+        logger.info(f"开始为实例 ID {instance_id} 部署版本 {version_tag} 到路径 {resolved_deploy_path}")
 
-        instance = instance_manager.get_instance(instance_id)
-        if not instance:
-            logger.error(f"部署失败：找不到实例ID {instance_id}。")
-            return False
-
-        if not instance.path:
-            logger.error(f"部署失败：实例ID {instance_id} 的路径未设置。")
-            return False
-
-        deploy_path = Path(instance.path).resolve()
-        logger.info(f"获取到实例 {instance_id} 的部署路径: {deploy_path}")
+        logger.info(f"部署操作将在以下绝对路径执行: {resolved_deploy_path} (实例ID: {instance_id})")
 
         cloned_successfully = self._run_git_clone(
-            self.primary_repo_url, version_tag, deploy_path
+            self.primary_repo_url, version_tag, resolved_deploy_path
         )
         if not cloned_successfully:
             logger.warning(
                 f"主仓库 {self.primary_repo_url} 克隆失败 (实例ID: {instance_id})，尝试备用仓库 {self.secondary_repo_url}"
             )
             cloned_successfully = self._run_git_clone(
-                self.secondary_repo_url, version_tag, deploy_path
+                self.secondary_repo_url, version_tag, resolved_deploy_path
             )
             if not cloned_successfully:
                 logger.error(
                     f"主仓库和备用仓库均克隆失败 (实例ID: {instance_id})。部署中止。"
                 )
-                if deploy_path.exists():
+                if resolved_deploy_path.exists():
                     logger.info(
-                        f"清理部署失败的路径: {deploy_path} (实例ID: {instance_id})"
+                        f"清理部署失败的路径: {resolved_deploy_path} (实例ID: {instance_id})"
                     )
-                    shutil.rmtree(deploy_path, ignore_errors=True)
+                    shutil.rmtree(resolved_deploy_path, ignore_errors=True)
                 return False
 
-        logger.info(f"代码已成功克隆到 {deploy_path} (实例ID: {instance_id})")
+        logger.info(f"代码已成功克隆到 {resolved_deploy_path} (实例ID: {instance_id})")
 
-        config_dir = deploy_path / "config"
+        config_dir = resolved_deploy_path / "config"
         try:
             config_dir.mkdir(parents=True, exist_ok=True)
             logger.info(f"成功创建/确认文件夹: {config_dir} (实例ID: {instance_id})")
@@ -153,7 +185,7 @@ class DeployManager:
             logger.error(
                 f"创建 config 文件夹 {config_dir} 失败 (实例ID: {instance_id}): {e}"
             )
-            shutil.rmtree(deploy_path, ignore_errors=True)  # 清理
+            shutil.rmtree(resolved_deploy_path, ignore_errors=True)  # 清理
             return False
 
         template_files_to_copy = {
@@ -168,7 +200,7 @@ class DeployManager:
                     logger.error(
                         f"模板文件 {source_file} 不存在 (实例ID: {instance_id})。"
                     )
-                    shutil.rmtree(deploy_path, ignore_errors=True)  # 清理
+                    shutil.rmtree(resolved_deploy_path, ignore_errors=True)  # 清理
                     return False
                 shutil.copy2(source_file, destination_file)
                 logger.info(
@@ -178,18 +210,19 @@ class DeployManager:
                 logger.error(
                     f"复制文件 {source_file} 到 {destination_file} 失败 (实例ID: {instance_id}): {e}"
                 )
-                shutil.rmtree(deploy_path, ignore_errors=True)  # 清理
+                shutil.rmtree(resolved_deploy_path, ignore_errors=True)  # 清理
                 return False
 
         env_template_file = self.template_dir / "template.env"
-        env_final_file = deploy_path / ".env"
+        env_final_file = resolved_deploy_path / ".env"
         try:
             if not env_template_file.exists():
                 logger.error(
                     f"模板 .env 文件 {env_template_file} 不存在 (实例ID: {instance_id})。"
                 )
-                shutil.rmtree(deploy_path, ignore_errors=True)  # 清理
-                return False
+                shutil.rmtree(resolved_deploy_path, ignore_errors=True)  # 清理
+                return False  # Added return False based on similar logic above
+
             shutil.copy2(env_template_file, env_final_file)
             logger.info(
                 f"成功复制 {env_template_file} 到 {env_final_file} (实例ID: {instance_id})"
@@ -198,7 +231,7 @@ class DeployManager:
             logger.error(
                 f"复制文件 {env_template_file} 到 {env_final_file} 失败 (实例ID: {instance_id}): {e}"
             )
-            shutil.rmtree(deploy_path, ignore_errors=True)  # 清理
+            shutil.rmtree(resolved_deploy_path, ignore_errors=True)  # 清理
             return False
 
         logger.info(f"主应用文件部署完成 (实例ID: {instance_id})。开始处理服务部署...")
@@ -220,7 +253,7 @@ class DeployManager:
                 logger.error(
                     f"'napcat-ada' 服务配置缺少 'path'。(实例ID: {instance_id})"
                 )
-                shutil.rmtree(deploy_path, ignore_errors=True)  # 清理主路径
+                shutil.rmtree(resolved_deploy_path, ignore_errors=True)  # 清理主路径
                 return False
 
             service_deploy_path = Path(service_path_str).resolve()
@@ -246,7 +279,7 @@ class DeployManager:
                 )
                 if service_deploy_path.exists():  # 清理服务路径
                     shutil.rmtree(service_deploy_path, ignore_errors=True)
-                shutil.rmtree(deploy_path, ignore_errors=True)  # 清理主路径
+                shutil.rmtree(resolved_deploy_path, ignore_errors=True)  # 清理主路径
                 return False
 
             logger.info(
@@ -266,7 +299,7 @@ class DeployManager:
                     )
                     if service_deploy_path.exists():
                         shutil.rmtree(service_deploy_path, ignore_errors=True)
-                    shutil.rmtree(deploy_path, ignore_errors=True)
+                    shutil.rmtree(resolved_deploy_path, ignore_errors=True)
                     return False
                 shutil.copy2(source_service_config, destination_service_config)
                 logger.info(
@@ -278,7 +311,7 @@ class DeployManager:
                 )
                 if service_deploy_path.exists():
                     shutil.rmtree(service_deploy_path, ignore_errors=True)
-                shutil.rmtree(deploy_path, ignore_errors=True)
+                shutil.rmtree(resolved_deploy_path, ignore_errors=True)
                 return False
             logger.info(f"'napcat-ada' 服务部署成功。(实例ID: {instance_id})")
         elif not found_napcat_ada:
@@ -288,7 +321,7 @@ class DeployManager:
         # 如果 found_napcat_ada 为 True 但 napcat_ada_service_config 为 None (例如 path 缺失)，则已在上面处理
 
         logger.info(
-            f"版本 {version_tag} 及所选服务已成功部署到 {deploy_path} (实例ID: {instance_id})"
+            f"版本 {version_tag} 及所选服务已成功部署到 {resolved_deploy_path} (实例ID: {instance_id})"
         )
         return True
 
