@@ -221,7 +221,9 @@ class InstanceManager:
             logger.error(f"获取所有实例时出错: {e}")
             return []
 
-    def get_instance_services(self, instance_id: str) -> List[Dict[str, Any]]:  # Changed return type
+    def get_instance_services(
+        self, instance_id: str
+    ) -> List[Dict[str, Any]]:  # Changed return type
         """
         根据实例ID从数据库中检索该实例安装的所有服务的详细信息列表。
 
@@ -242,7 +244,9 @@ class InstanceManager:
                 )
                 instance_db = session.exec(instance_exists_statement).first()
                 if not instance_db:
-                    logger.warning(f"尝试获取服务详细列表失败：未找到实例 {instance_id}。")
+                    logger.warning(
+                        f"尝试获取服务详细列表失败：未找到实例 {instance_id}。"
+                    )
                     return []
 
                 # 获取与 instance_id 关联的所有服务
@@ -250,7 +254,7 @@ class InstanceManager:
                     Services.instance_id == instance_id
                 )
                 db_services = session.exec(statement).all()  # Returns List[Services]
-                
+
                 services_details = [
                     {
                         "id": service.id,
@@ -263,9 +267,13 @@ class InstanceManager:
                     }
                     for service in db_services
                 ]
-                logger.info(f"成功检索到实例 {instance_id} 的服务详细列表: {services_details}") # Updated log message
+                logger.info(
+                    f"成功检索到实例 {instance_id} 的服务详细列表: {services_details}"
+                )  # Updated log message
         except Exception as e:
-            logger.error(f"获取实例 {instance_id} 的服务详细列表时出错: {e}") # Updated log message
+            logger.error(
+                f"获取实例 {instance_id} 的服务详细列表时出错: {e}"
+            )  # Updated log message
             return []  # Return empty list on error
         return services_details
 

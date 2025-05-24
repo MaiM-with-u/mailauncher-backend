@@ -72,7 +72,8 @@ class DeployManager:
             str(deploy_path),  # 将仓库内容直接克隆到 deploy_path
         ]
         logger.info(
-            f"准备执行 Git clone 命令: {' '.join(clone_command)} (版本: {version_tag})")
+            f"准备执行 Git clone 命令: {' '.join(clone_command)} (版本: {version_tag})"
+        )
         logger.info(f"尝试从 {repo_url} 克隆版本 {version_tag} 到 {deploy_path}...")
         logger.debug(f"执行的 Git 命令: {' '.join(clone_command)}")
 
@@ -103,14 +104,16 @@ class DeployManager:
                 if git_dir.is_dir():  # Sourcery suggestion applied
                     logger.info(f"准备删除克隆下来的 .git 目录: {git_dir}")
                     try:
-                        shutil.rmtree(git_dir, onexc=self._handle_remove_readonly) # MODIFIED: Added onexc handler
+                        shutil.rmtree(
+                            git_dir, onexc=self._handle_remove_readonly
+                        )  # MODIFIED: Added onexc handler
                         logger.info(f"成功删除 .git 目录: {git_dir}")
                     except Exception as e_rm_git:
                         logger.error(f"删除 .git 目录 {git_dir} 失败: {e_rm_git}")
                         #  即使删除 .git 失败，也可能需要根据情况决定是否返回 True 或 False
                         #  目前，如果删除 .git 失败，我们仍然认为克隆的主要部分是成功的，但记录错误。
                         #  如果删除 .git 是关键步骤，则应返回 False
-                        pass #  或者 return False，取决于业务逻辑
+                        pass  #  或者 return False，取决于业务逻辑
                 else:
                     logger.warning(f"克隆完成后未找到 .git 目录: {git_dir}")
                 return True
@@ -127,7 +130,9 @@ class DeployManager:
         except subprocess.TimeoutExpired:
             logger.error(f"Git 克隆操作超时 ({repo_url}, 版本: {version_tag})。")
             if process:
-                logger.info(f"由于超时，正在终止 Git 进程 (PID: {process.pid if hasattr(process, 'pid') else 'N/A'}) ")
+                logger.info(
+                    f"由于超时，正在终止 Git 进程 (PID: {process.pid if hasattr(process, 'pid') else 'N/A'}) "
+                )
                 process.kill()
                 process.communicate()
                 logger.info("Git 进程已终止。")
@@ -151,7 +156,7 @@ class DeployManager:
         """
         # Check if file access error
         # exc_info[0] is the exception type, exc_info[1] is the exception instance
-        exc_type, exc_instance, _ = exc_info # Unpack the exc_info tuple
+        exc_type, exc_instance, _ = exc_info  # Unpack the exc_info tuple
         if isinstance(exc_instance, PermissionError):
             if not os.access(path, os.W_OK):
                 # Try to change the perm
@@ -160,10 +165,10 @@ class DeployManager:
                 func(path)
             else:
                 # Re-raise the error if it's not a permission issue we can fix
-                raise exc_instance # Raise the original exception instance
+                raise exc_instance  # Raise the original exception instance
         else:
             # Re-raise other errors
-            raise exc_instance # Raise the original exception instance
+            raise exc_instance  # Raise the original exception instance
 
     def deploy_version(
         self,
@@ -174,9 +179,13 @@ class DeployManager:
     ) -> bool:
         # MODIFIED: Updated log message and use resolved deploy_path
         resolved_deploy_path = deploy_path.resolve()
-        logger.info(f"开始为实例 ID {instance_id} 部署版本 {version_tag} 到路径 {resolved_deploy_path}")
+        logger.info(
+            f"开始为实例 ID {instance_id} 部署版本 {version_tag} 到路径 {resolved_deploy_path}"
+        )
 
-        logger.info(f"部署操作将在以下绝对路径执行: {resolved_deploy_path} (实例ID: {instance_id})")
+        logger.info(
+            f"部署操作将在以下绝对路径执行: {resolved_deploy_path} (实例ID: {instance_id})"
+        )
 
         cloned_successfully = self._run_git_clone(
             self.primary_repo_url, version_tag, resolved_deploy_path
@@ -238,7 +247,7 @@ class DeployManager:
                 shutil.rmtree(resolved_deploy_path, ignore_errors=True)  # 清理
                 return False
 
-        env_template_file = template_dir/ "template.env"
+        env_template_file = template_dir / "template.env"
         env_final_file = resolved_deploy_path / ".env"
         try:
             if not env_template_file.exists():
