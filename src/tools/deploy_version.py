@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 from src.utils.logger import get_module_logger
 import stat  # For file permissions
-import errno # For error codes
+# import errno # For error codes
 
 # Import List for type hinting
 from typing import List, Dict, Any
