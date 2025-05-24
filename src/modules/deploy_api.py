@@ -15,7 +15,7 @@ from src.utils.database import engine
 from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 import httpx
-from src.tools.deploy_version import deploy_manager # 导入部署管理器
+from src.tools.deploy_version import deploy_manager  # 导入部署管理器
 
 logger = get_module_logger("部署API")  # 修改 logger 名称
 router = APIRouter()
@@ -106,10 +106,12 @@ async def deploy_maibot(payload: DeployRequest = Body(...)):
             # 注意：deploy_version 内部应该已经处理了部分创建文件的清理工作
             raise HTTPException(
                 status_code=500,
-                detail=f"部署 MaiBot 版本 {payload.version} 失败。请查看日志了解详情。"
+                detail=f"部署 MaiBot 版本 {payload.version} 失败。请查看日志了解详情。",
             )
-        
-        logger.info(f"版本 {payload.version} 已成功部署到 {payload.install_path}。现在记录到数据库...")
+
+        logger.info(
+            f"版本 {payload.version} 已成功部署到 {payload.install_path}。现在记录到数据库..."
+        )
 
         try:
             new_instance_obj = instance_manager.create_instance(
