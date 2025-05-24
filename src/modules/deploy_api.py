@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Body
 from pydantic import BaseModel, Field
-from typing import List, Optional
+from typing import List, Optional, Dict, Any  # Add Dict and Any for type hinting
 from src.modules.instance_manager import (
     instance_manager,
     InstanceStatus,
@@ -153,44 +153,65 @@ async def deploy_maibot(payload: DeployRequest = Body(...)):
 @router.get(
     "/versions", response_model=AvailableVersionsResponse
 )  # 修改路径为 /versions
-async def get_available_versions():
+async def get_available_versions() -> AvailableVersionsResponse:
     """
     获取可用于部署的版本列表。
     """
-    github_api_url = "https://api.github.com/repos/MaiM-with-u/MaiBot/tags"
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(github_api_url)
-            response.raise_for_status()
-            tags_data = response.json()
+    github_api_url: str = "https://api.github.com/repos/MaiM-with-u/MaiBot/tags"
+    gitee_api_url: str = "https://gitee.com/api/v5/repos/DrSmooth/MaiBot/tags"  # 备用 Gitee API URL
+    default_versions: List[str] = ["main"]  # 移除了 "latest"
 
-            versions = [
+    async def fetch_versions_from_url(url: str, source_name: str) -> List[str]:
+        logger.info(f"尝试从 {source_name} 获取版本列表: {url}")
+        async with httpx.AsyncClient() as client:
+            response: httpx.Response = await client.get(url)
+            response.raise_for_status()
+            tags_data: List[Dict[str, Any]] = response.json()
+
+            versions: List[str] = [
                 tag["name"]
                 for tag in tags_data
-                if "name" in tag and tag["name"] != "EasyInstall-windows"
+                if "name" in tag and isinstance(tag["name"], str) and tag["name"].startswith("0.6") and tag["name"] != "EasyInstall-windows"
             ]
-            if "latest" not in versions:
-                versions.insert(0, "latest")
-            if "main" not in versions:
-                versions.insert(1, "main")
+            # 不再强制添加 "latest"
+            if "main" not in versions:  # 仍然保留 main
+                versions.insert(0, "main")  # 将 main 放在列表开头
+            logger.info(f"从 {source_name} 获取并过滤后的版本列表: {versions}")
+            return versions
 
-            logger.info(f"从 GitHub 获取的版本列表: {versions}")
-            return AvailableVersionsResponse(versions=versions)
-    except httpx.HTTPStatusError as e:
-        logger.error(
-            f"请求 GitHub API 失败: {e.response.status_code} - {e.response.text}"
+    try:
+        versions: List[str] = await fetch_versions_from_url(github_api_url, "GitHub")
+        # 如果过滤后没有0.6.x的版本，但有main，则返回main
+        if not any(v.startswith("0.6") for v in versions) and "main" in versions:
+            logger.info("GitHub 中未找到 0.6.x 版本，但存在 main 版本。")
+        elif not versions: # 如果 GitHub 返回空列表（无0.6.x也无main）
+            logger.warning("GitHub 未返回任何有效版本，尝试 Gitee。")
+            raise httpx.RequestError("No valid versions from GitHub") # 抛出异常以触发 Gitee 逻辑
+
+        return AvailableVersionsResponse(versions=versions)
+    except (httpx.HTTPStatusError, httpx.RequestError) as e_gh:
+        logger.warning(
+            f"请求 GitHub API 失败或未找到有效版本: {e_gh}. 尝试从 Gitee 获取..."
         )
-        default_versions = ["latest", "main"]
-        logger.warning(f"GitHub API 请求失败，返回默认版本列表: {default_versions}")
-        return AvailableVersionsResponse(versions=default_versions)
-    except httpx.RequestError as e:
-        logger.error(f"连接到 GitHub API 时发生错误: {e}")
-        default_versions = ["latest", "main"]
-        logger.warning(f"GitHub API 连接错误，返回默认版本列表: {default_versions}")
-        return AvailableVersionsResponse(versions=default_versions)
-    except Exception as e:
-        logger.error(f"获取版本列表时发生未知错误: {e}")
-        default_versions = ["latest", "main"]
+        try:
+            versions: List[str] = await fetch_versions_from_url(gitee_api_url, "Gitee")
+            if not any(v.startswith("0.6") for v in versions) and "main" in versions:
+                logger.info("Gitee 中未找到 0.6.x 版本，但存在 main 版本。")
+            elif not versions: # 如果 Gitee 也返回空列表
+                logger.warning("Gitee 未返回任何有效版本，返回默认版本。")
+                return AvailableVersionsResponse(versions=default_versions) # 返回仅包含 "main" 的默认列表
+
+            return AvailableVersionsResponse(versions=versions)
+        except (httpx.HTTPStatusError, httpx.RequestError) as e_gt:
+            logger.error(
+                f"请求 Gitee API 也失败或未找到有效版本: {e_gt}. 返回默认版本列表。"
+            )
+            return AvailableVersionsResponse(versions=default_versions)
+        except Exception as e_gt_unknown:
+            logger.error(f"从 Gitee 获取版本列表时发生未知错误: {e_gt_unknown}")
+            return AvailableVersionsResponse(versions=default_versions)
+    except Exception as e_unknown:
+        logger.error(f"获取版本列表时发生未知错误: {e_unknown}")
         logger.warning(
             f"获取版本列表时发生未知错误，返回默认版本列表: {default_versions}"
         )
