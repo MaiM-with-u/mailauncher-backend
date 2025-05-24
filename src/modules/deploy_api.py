@@ -102,7 +102,9 @@ async def deploy_maibot(payload: DeployRequest = Body(...)):
         deploy_success = deploy_manager.deploy_version(payload.version, instance_id_str)
 
         if not deploy_success:
-            logger.error(f"使用 deploy_manager 部署版本 {payload.version} 到实例 {instance_id_str} 失败。")
+            logger.error(
+                f"使用 deploy_manager 部署版本 {payload.version} 到实例 {instance_id_str} 失败。"
+            )
             # 注意：deploy_version 内部应该已经处理了部分创建文件的清理工作
             raise HTTPException(
                 status_code=500,

@@ -92,14 +92,16 @@ class DeployManager:
             )
             return False
 
-    def deploy_version(self, version_tag: str, instance_id: str) -> bool: # Changed install_path_str to instance_id
+    def deploy_version(
+        self, version_tag: str, instance_id: str
+    ) -> bool:  # Changed install_path_str to instance_id
         logger.info(f"开始为实例 ID {instance_id} 部署版本 {version_tag}")
 
         instance = instance_manager.get_instance(instance_id)
         if not instance:
             logger.error(f"部署失败：找不到实例ID {instance_id}。")
             return False
-        
+
         if not instance.path:
             logger.error(f"部署失败：实例ID {instance_id} 的路径未设置。")
             return False
@@ -111,15 +113,23 @@ class DeployManager:
             self.primary_repo_url, version_tag, deploy_path
         )
         if not cloned_successfully:
-            logger.warning(f"主仓库 {self.primary_repo_url} 克隆失败 (实例ID: {instance_id})，尝试备用仓库 {self.secondary_repo_url}")
-            cloned_successfully = self._run_git_clone(self.secondary_repo_url, version_tag, deploy_path)
+            logger.warning(
+                f"主仓库 {self.primary_repo_url} 克隆失败 (实例ID: {instance_id})，尝试备用仓库 {self.secondary_repo_url}"
+            )
+            cloned_successfully = self._run_git_clone(
+                self.secondary_repo_url, version_tag, deploy_path
+            )
             if not cloned_successfully:
-                logger.error(f"主仓库和备用仓库均克隆失败 (实例ID: {instance_id})。部署中止。")
+                logger.error(
+                    f"主仓库和备用仓库均克隆失败 (实例ID: {instance_id})。部署中止。"
+                )
                 if deploy_path.exists():
-                    logger.info(f"清理部署失败的路径: {deploy_path} (实例ID: {instance_id})")
+                    logger.info(
+                        f"清理部署失败的路径: {deploy_path} (实例ID: {instance_id})"
+                    )
                     shutil.rmtree(deploy_path, ignore_errors=True)
                 return False
-        
+
         logger.info(f"代码已成功克隆到 {deploy_path} (实例ID: {instance_id})")
 
         config_dir = deploy_path / "config"
@@ -127,8 +137,10 @@ class DeployManager:
             config_dir.mkdir(parents=True, exist_ok=True)
             logger.info(f"成功创建/确认文件夹: {config_dir} (实例ID: {instance_id})")
         except OSError as e:
-            logger.error(f"创建 config 文件夹 {config_dir} 失败 (实例ID: {instance_id}): {e}")
-            shutil.rmtree(deploy_path, ignore_errors=True) # 清理
+            logger.error(
+                f"创建 config 文件夹 {config_dir} 失败 (实例ID: {instance_id}): {e}"
+            )
+            shutil.rmtree(deploy_path, ignore_errors=True)  # 清理
             return False
 
         template_files_to_copy = {
@@ -140,31 +152,45 @@ class DeployManager:
             destination_file = config_dir / final_name
             try:
                 if not source_file.exists():
-                    logger.error(f"模板文件 {source_file} 不存在 (实例ID: {instance_id})。")
-                    shutil.rmtree(deploy_path, ignore_errors=True) # 清理
+                    logger.error(
+                        f"模板文件 {source_file} 不存在 (实例ID: {instance_id})。"
+                    )
+                    shutil.rmtree(deploy_path, ignore_errors=True)  # 清理
                     return False
                 shutil.copy2(source_file, destination_file)
-                logger.info(f"成功复制 {source_file} 到 {destination_file} (实例ID: {instance_id})")
+                logger.info(
+                    f"成功复制 {source_file} 到 {destination_file} (实例ID: {instance_id})"
+                )
             except Exception as e:
-                logger.error(f"复制文件 {source_file} 到 {destination_file} 失败 (实例ID: {instance_id}): {e}")
-                shutil.rmtree(deploy_path, ignore_errors=True) # 清理
+                logger.error(
+                    f"复制文件 {source_file} 到 {destination_file} 失败 (实例ID: {instance_id}): {e}"
+                )
+                shutil.rmtree(deploy_path, ignore_errors=True)  # 清理
                 return False
 
         env_template_file = self.template_dir / "template.env"
         env_final_file = deploy_path / ".env"
         try:
             if not env_template_file.exists():
-                logger.error(f"模板 .env 文件 {env_template_file} 不存在 (实例ID: {instance_id})。")
-                shutil.rmtree(deploy_path, ignore_errors=True) # 清理
+                logger.error(
+                    f"模板 .env 文件 {env_template_file} 不存在 (实例ID: {instance_id})。"
+                )
+                shutil.rmtree(deploy_path, ignore_errors=True)  # 清理
                 return False
             shutil.copy2(env_template_file, env_final_file)
-            logger.info(f"成功复制 {env_template_file} 到 {env_final_file} (实例ID: {instance_id})")
+            logger.info(
+                f"成功复制 {env_template_file} 到 {env_final_file} (实例ID: {instance_id})"
+            )
         except Exception as e:
-            logger.error(f"复制文件 {env_template_file} 到 {env_final_file} 失败 (实例ID: {instance_id}): {e}")
-            shutil.rmtree(deploy_path, ignore_errors=True) # 清理
+            logger.error(
+                f"复制文件 {env_template_file} 到 {env_final_file} 失败 (实例ID: {instance_id}): {e}"
+            )
+            shutil.rmtree(deploy_path, ignore_errors=True)  # 清理
             return False
 
-        logger.info(f"版本 {version_tag} 成功部署到 {deploy_path} (实例ID: {instance_id})")
+        logger.info(
+            f"版本 {version_tag} 成功部署到 {deploy_path} (实例ID: {instance_id})"
+        )
         return True
 
 
