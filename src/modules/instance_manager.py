@@ -234,16 +234,22 @@ class InstanceManager:
         try:
             with Session(engine) as session:
                 # 首先检查实例是否存在，虽然此函数主要关注服务，但这是一个好习惯
-                instance_exists_statement = select(Instances).where(Instances.instance_id == instance_id)
+                instance_exists_statement = select(Instances).where(
+                    Instances.instance_id == instance_id
+                )
                 instance_db = session.exec(instance_exists_statement).first()
                 if not instance_db:
                     logger.warning(f"尝试获取服务列表失败：未找到实例 {instance_id}。")
                     return []
 
                 # 获取与 instance_id 关联的所有服务
-                statement = select(Services.name).where(Services.instance_id == instance_id)
+                statement = select(Services.name).where(
+                    Services.instance_id == instance_id
+                )
                 results = session.exec(statement).all()
-                service_names = [name for name in results] # results is a list of service names
+                service_names = [
+                    name for name in results
+                ]  # results is a list of service names
                 logger.info(f"成功检索到实例 {instance_id} 的服务列表: {service_names}")
         except Exception as e:
             logger.error(f"获取实例 {instance_id} 的服务列表时出错: {e}")

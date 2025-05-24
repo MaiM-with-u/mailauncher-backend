@@ -26,7 +26,9 @@ async def get_pty_command_and_cwd_from_instance(
     db = get_db_instance()
     parts = instance_id_full.rpartition("_")
     if not parts[1]:
-        logger.warning(f"PTY 配置的 session_id 格式无效 (缺少类型部分): {instance_id_full}")
+        logger.warning(
+            f"PTY 配置的 session_id 格式无效 (缺少类型部分): {instance_id_full}"
+        )
         return None, None, None
 
     instance_short_id, _, type_part = parts
@@ -47,16 +49,22 @@ async def get_pty_command_and_cwd_from_instance(
 
     if type_part == "main":
         # 主程序 PTY 配置
-        pty_command = "python .\\bot.py" 
+        pty_command = "python .\\bot.py"
         pty_cwd = instance.path
-        logger.info(f"为 'main' 类型 (实例 '{instance_short_id}') 配置 PTY: 命令='{pty_command}', CWD='{pty_cwd}'")
+        logger.info(
+            f"为 'main' 类型 (实例 '{instance_short_id}') 配置 PTY: 命令='{pty_command}', CWD='{pty_cwd}'"
+        )
     else:  # Adapter/Service PTY configuration (type_part is the service name)
         logger.info(f"为服务 '{type_part}' (实例 '{instance_short_id}') 配置 PTY。")
-        
+
         # 1. 获取实例的已安装服务列表
-        installed_service_names = instance_manager.get_instance_services(instance_short_id)
+        installed_service_names = instance_manager.get_instance_services(
+            instance_short_id
+        )
         if not isinstance(installed_service_names, list):
-            logger.error(f"获取实例 '{instance_short_id}' 的服务列表失败或返回格式不正确。无法验证服务 '{type_part}'")
+            logger.error(
+                f"获取实例 '{instance_short_id}' 的服务列表失败或返回格式不正确。无法验证服务 '{type_part}'"
+            )
             return None, None, status_value
 
         # 2. 检查请求的服务是否在已安装列表中
@@ -70,10 +78,15 @@ async def get_pty_command_and_cwd_from_instance(
         # 3. 从数据库获取服务详情，包括 run_cmd
         service_details = await db.get_service_details(instance_short_id, type_part)
 
-        if service_details and service_details.path and hasattr(service_details, 'run_cmd') and service_details.run_cmd:
+        if (
+            service_details
+            and service_details.path
+            and hasattr(service_details, "run_cmd")
+            and service_details.run_cmd
+        ):
             pty_cwd = service_details.path
             pty_command = service_details.run_cmd  # 使用 Services 表中的 run_cmd 字段
-            
+
             logger.info(
                 f"从数据库为服务 '{type_part}' (实例 '{instance_short_id}') 配置 PTY: "
                 f"命令='{pty_command}', CWD='{pty_cwd}'"
@@ -88,7 +101,7 @@ async def get_pty_command_and_cwd_from_instance(
                 logger.warning(
                     f"服务 '{type_part}' (实例: '{instance_short_id}') 的路径 (path) 缺失。PTY 将不会启动。"
                 )
-            elif not hasattr(service_details, 'run_cmd') or not service_details.run_cmd:
+            elif not hasattr(service_details, "run_cmd") or not service_details.run_cmd:
                 logger.warning(
                     f"服务 '{type_part}' (实例: '{instance_short_id}') 的启动命令 (run_cmd) 缺失或为空。PTY 将不会启动。"
                 )
@@ -96,7 +109,7 @@ async def get_pty_command_and_cwd_from_instance(
                 logger.warning(
                     f"为服务 '{type_part}' (实例: '{instance_short_id}') 配置 PTY 失败，配置不完整。PTY 将不会启动。"
                 )
-            return None, None, status_value # 返回 None 表示无法配置 PTY
+            return None, None, status_value  # 返回 None 表示无法配置 PTY
 
     # 确保 pty_command 和 pty_cwd 在成功路径上都被设置
     if not pty_command or not pty_cwd:
@@ -411,22 +424,31 @@ async def stop_all_ptys_for_instance(instance_short_id: str) -> dict:
     if not sessions_to_process:
         msg = f"未找到实例 '{instance_short_id}' 的活动 PTY 会话。"
         logger.info(msg)
-        return {"success": True, "message": msg, "terminated_details": [], "failed_details": []}
+        return {
+            "success": True,
+            "message": msg,
+            "terminated_details": [],
+            "failed_details": [],
+        }
 
     for session_id in sessions_to_process:
-        logger.info(f"正在处理实例 '{instance_short_id}' 的 PTY 会话 '{session_id}' 的终止...")
-        
+        logger.info(
+            f"正在处理实例 '{instance_short_id}' 的 PTY 会话 '{session_id}' 的终止..."
+        )
+
         pty_info_to_clean = None
         # Lock again to safely pop from active_ptys
         async with active_ptys_lock:
-            if session_id in active_ptys: # Re-check if still exists
+            if session_id in active_ptys:  # Re-check if still exists
                 pty_info_to_clean = active_ptys.pop(session_id)
             else:
                 # Already removed or cleaned up, possibly by its own disconnect logic
                 logger.warning(f"PTY 会话 '{session_id}' 在尝试终止前已被移除或处理。")
-                terminated_sessions_info.append({"id": session_id, "status": "already_gone", "type": "unknown"})
+                terminated_sessions_info.append(
+                    {"id": session_id, "status": "already_gone", "type": "unknown"}
+                )
                 continue
-        
+
         # pty_info_to_clean should not be None if it was popped
         read_task = pty_info_to_clean.get("output_task")
         pty_process = pty_info_to_clean.get("pty")
@@ -438,67 +460,104 @@ async def stop_all_ptys_for_instance(instance_short_id: str) -> dict:
         if read_task and not read_task.done():
             read_task.cancel()
             try:
-                await read_task # Wait for cancellation to complete
+                await read_task  # Wait for cancellation to complete
             except asyncio.CancelledError:
                 logger.info(f"PTY 输出任务 for session '{session_label}' 已成功取消。")
             except Exception as e_task_cancel:
-                logger.error(f"等待已取消的 PTY 输出任务 for session '{session_label}' 时出错: {e_task_cancel}")
+                logger.error(
+                    f"等待已取消的 PTY 输出任务 for session '{session_label}' 时出错: {e_task_cancel}"
+                )
 
         # 2. Terminate the PTY process
         pty_terminated_successfully = False
         if pty_process:
             if pty_process.isalive():
-                logger.info(f"正在终止 PTY 进程 (PID: {pty_process.pid}) for session '{session_label}'。")
+                logger.info(
+                    f"正在终止 PTY 进程 (PID: {pty_process.pid}) for session '{session_label}'。"
+                )
                 try:
                     pty_process.terminate(force=True)
-                    logger.info(f"PTY 进程 (PID: {pty_process.pid}) for session '{session_label}' terminate signal sent.")
-                    pty_terminated_successfully = True 
+                    logger.info(
+                        f"PTY 进程 (PID: {pty_process.pid}) for session '{session_label}' terminate signal sent."
+                    )
+                    pty_terminated_successfully = True
                 except Exception as e_term:
-                    logger.error(f"终止 PTY for session '{session_label}' 时出错: {e_term}")
-                    failed_to_terminate_sessions_info.append({"id": session_id, "type": current_type_part, "error": str(e_term)})
-            else: # PTY process exists but is not alive
+                    logger.error(
+                        f"终止 PTY for session '{session_label}' 时出错: {e_term}"
+                    )
+                    failed_to_terminate_sessions_info.append(
+                        {
+                            "id": session_id,
+                            "type": current_type_part,
+                            "error": str(e_term),
+                        }
+                    )
+            else:  # PTY process exists but is not alive
                 logger.info(f"PTY 进程 for session '{session_label}' 已停止。")
-                pty_terminated_successfully = True # Already stopped
-        else: # No PTY process object found in the pty_info
-            logger.warning(f"PTY 会话 '{session_label}' 的 pty_info 中未找到 PTY 进程对象。")
+                pty_terminated_successfully = True  # Already stopped
+        else:  # No PTY process object found in the pty_info
+            logger.warning(
+                f"PTY 会话 '{session_label}' 的 pty_info 中未找到 PTY 进程对象。"
+            )
             # Consider this 'terminated' as there's nothing to kill, or an anomaly.
-            pty_terminated_successfully = True 
+            pty_terminated_successfully = True
 
         # 3. Close the WebSocket connection associated with this PTY (if any and connected)
         if websocket and websocket.client_state == WebSocketState.CONNECTED:
             logger.info(f"正在关闭 WebSocket 连接 for session '{session_label}'。")
             try:
                 # Notify client before closing
-                await websocket.send_json({"type": "status", "message": "实例已停止，PTY 被服务器终止。"})
-                await websocket.close(code=1000) # Normal closure
-            except RuntimeError as e_ws_runtime: # e.g., sending on an already closed socket
-                logger.warning(f"关闭 WebSocket for session '{session_label}' 时发生运行时错误: {e_ws_runtime}")
-            except Exception as e_ws_close: # Other errors during close
-                logger.error(f"关闭 WebSocket for session '{session_label}' 时发生错误: {e_ws_close}")
-        
+                await websocket.send_json(
+                    {"type": "status", "message": "实例已停止，PTY 被服务器终止。"}
+                )
+                await websocket.close(code=1000)  # Normal closure
+            except (
+                RuntimeError
+            ) as e_ws_runtime:  # e.g., sending on an already closed socket
+                logger.warning(
+                    f"关闭 WebSocket for session '{session_label}' 时发生运行时错误: {e_ws_runtime}"
+                )
+            except Exception as e_ws_close:  # Other errors during close
+                logger.error(
+                    f"关闭 WebSocket for session '{session_label}' 时发生错误: {e_ws_close}"
+                )
+
         if pty_terminated_successfully:
             # Add to terminated list only if not already marked as failed
-            if not any(f_item["id"] == session_id for f_item in failed_to_terminate_sessions_info):
-                terminated_sessions_info.append({"id": session_id, "type": current_type_part, "status": "terminated"})
+            if not any(
+                f_item["id"] == session_id
+                for f_item in failed_to_terminate_sessions_info
+            ):
+                terminated_sessions_info.append(
+                    {
+                        "id": session_id,
+                        "type": current_type_part,
+                        "status": "terminated",
+                    }
+                )
         # If not pty_terminated_successfully and not in failed_to_terminate_sessions_info, it implies an issue not caught by PTY termination try-except
         # This case might need more specific logging or error handling if it occurs.
         # For now, it means it wasn't explicitly successful, nor did it log a PTY termination error.
 
     final_message = f"实例 '{instance_short_id}' 的 PTY 停止处理完成。"
     success_overall = not bool(failed_to_terminate_sessions_info)
-    
+
     logger.info(final_message)
     # Detailed logging for debugging
     if terminated_sessions_info:
-        logger.debug(f"Terminated session details for instance '{instance_short_id}': {terminated_sessions_info}")
+        logger.debug(
+            f"Terminated session details for instance '{instance_short_id}': {terminated_sessions_info}"
+        )
     if failed_to_terminate_sessions_info:
-        logger.debug(f"Failed to terminate session details for instance '{instance_short_id}': {failed_to_terminate_sessions_info}")
+        logger.debug(
+            f"Failed to terminate session details for instance '{instance_short_id}': {failed_to_terminate_sessions_info}"
+        )
 
     return {
         "success": success_overall,
         "message": final_message,
         "terminated_details": terminated_sessions_info,
-        "failed_details": failed_to_terminate_sessions_info
+        "failed_details": failed_to_terminate_sessions_info,
     }
 
 
