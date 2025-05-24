@@ -23,7 +23,7 @@ from src.modules.websocket_manager import (
     PTY_COLS_DEFAULT,
     stop_all_ptys_for_instance,  # 添加此导入
 )
-from src.modules.instance_manager import instance_manager # 导入全局 instance_manager
+from src.modules.instance_manager import instance_manager  # 导入全局 instance_manager
 
 logger = get_module_logger("实例API")
 router = APIRouter()
@@ -316,9 +316,13 @@ async def start_instance(instance_id: str):
     logger.info(f"正在尝试启动实例 {instance_id} 的主应用 PTY ({SERVICE_TYPE_MAIN})...")
     if await _start_pty_process(main_session_id, instance_id, SERVICE_TYPE_MAIN):
         started_any_process = True
-        logger.info(f"实例 {instance_id} 的主应用 PTY ({SERVICE_TYPE_MAIN}) 已启动或已在运行。")
+        logger.info(
+            f"实例 {instance_id} 的主应用 PTY ({SERVICE_TYPE_MAIN}) 已启动或已在运行。"
+        )
     else:
-        logger.warning(f"启动实例 {instance_id} 的主应用 PTY ({SERVICE_TYPE_MAIN}) 失败。")
+        logger.warning(
+            f"启动实例 {instance_id} 的主应用 PTY ({SERVICE_TYPE_MAIN}) 失败。"
+        )
 
     # 3. 获取已安装的服务
     installed_services = instance_manager.get_instance_services(instance_id)
@@ -330,17 +334,20 @@ async def start_instance(instance_id: str):
             # 确保不会重复启动主应用（如果它也被列为服务的话）
             if service_name == SERVICE_TYPE_MAIN:
                 continue
-            
+
             service_session_id = f"{instance_id}_{service_name}"
             logger.info(f"正在尝试启动实例 {instance_id} 的服务 {service_name} PTY...")
             if await _start_pty_process(service_session_id, instance_id, service_name):
                 started_any_process = True
-                logger.info(f"实例 {instance_id} 的服务 {service_name} PTY 已启动或已在运行。")
+                logger.info(
+                    f"实例 {instance_id} 的服务 {service_name} PTY 已启动或已在运行。"
+                )
             else:
-                logger.warning(f"启动实例 {instance_id} 的服务 {service_name} PTY 失败。")
+                logger.warning(
+                    f"启动实例 {instance_id} 的服务 {service_name} PTY 失败。"
+                )
     else:
         logger.info(f"实例 {instance_id} 没有额外的已安装服务需要启动 PTY。")
-
 
     # 5. 根据 PTY 启动结果更新实例状态
     if started_any_process:
@@ -355,12 +362,14 @@ async def start_instance(instance_id: str):
         else:
             logger.error(f"更新实例 {instance_id} 状态为“运行中”失败。")
             return ActionResponse(
-                success=True, # PTY 可能仍在运行
+                success=True,  # PTY 可能仍在运行
                 message=f"实例 {instance.name} 组件已启动，但状态更新失败。",
             )
     else:
         instance_manager.update_instance_status(instance_id, InstanceStatus.STOPPED)
-        logger.warning(f"启动实例 {instance_id} 的任何 PTY 进程失败。状态已设置为“已停止”。")
+        logger.warning(
+            f"启动实例 {instance_id} 的任何 PTY 进程失败。状态已设置为“已停止”。"
+        )
         return ActionResponse(
             success=False, message=f"启动实例 {instance.name} 的任何组件失败。"
         )
@@ -385,15 +394,17 @@ async def stop_instance(instance_id: str):
     installed_services = instance_manager.get_instance_services(instance_id)
     if installed_services:
         for service_name in installed_services:
-            if service_name not in pty_types_to_stop: # 避免重复
+            if service_name not in pty_types_to_stop:  # 避免重复
                 pty_types_to_stop.append(service_name)
-    
+
     logger.info(f"实例 {instance_id} 将尝试停止以下 PTY 类型: {pty_types_to_stop}")
 
     # 3. 迭代并停止每个 PTY
     for pty_type in pty_types_to_stop:
         session_id = f"{instance_id}_{pty_type}"
-        logger.info(f"正在尝试停止实例 {instance_id} 的 PTY: {pty_type} (会话 ID: {session_id})...")
+        logger.info(
+            f"正在尝试停止实例 {instance_id} 的 PTY: {pty_type} (会话 ID: {session_id})..."
+        )
         if not await _stop_pty_process(session_id):
             all_processes_stopped_successfully = False
             logger.warning(
@@ -401,13 +412,14 @@ async def stop_instance(instance_id: str):
             )
         else:
             logger.info(f"实例 {instance_id} 的 PTY {pty_type} 已停止或没有运行。")
-    
+
     # 调用 websocket_manager 中的函数来确保所有与此实例相关的 PTY 都已清理
     # 这是一个额外的保障措施
-    logger.info(f"正在调用 stop_all_ptys_for_instance 清理实例 {instance_id} 的所有剩余 PTY...")
-    await stop_all_ptys_for_instance(instance_id) 
+    logger.info(
+        f"正在调用 stop_all_ptys_for_instance 清理实例 {instance_id} 的所有剩余 PTY..."
+    )
+    await stop_all_ptys_for_instance(instance_id)
     logger.info(f"实例 {instance_id} 的 stop_all_ptys_for_instance 清理完成。")
-
 
     # 4. 更新实例状态为 STOPPED
     # 无论个别 PTY 停止是否报告问题，最终都将状态设置为 STOPPED
@@ -423,12 +435,12 @@ async def stop_instance(instance_id: str):
             )
         else:
             return ActionResponse(
-                success=True, # 状态已更新为 STOPPED
+                success=True,  # 状态已更新为 STOPPED
                 message=f"实例 {instance.name} 组件已停止，但部分 PTY 可能未能完全确认停止。",
             )
     else:
         logger.error(f"更新实例 {instance_id} 状态为“已停止”失败。")
         return ActionResponse(
-            success=False, # 主要操作（状态更新）失败
+            success=False,  # 主要操作（状态更新）失败
             message=f"实例 {instance.name} 组件已尝试停止，但状态更新失败。",
         )
