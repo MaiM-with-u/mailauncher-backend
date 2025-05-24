@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 PTY_COLS_DEFAULT = 80
 PTY_ROWS_DEFAULT = 25
-MAX_LOG_HISTORY = 1000
 
 active_ptys: Dict[str, Dict[str, Any]] = {}
 active_ptys_lock = asyncio.Lock()
@@ -82,7 +81,7 @@ async def pty_output_to_websocket_and_db(
     session_id: str, pty_process: PtyProcess, websocket: WebSocket, db: Database
 ):
     """
-    读取 PTY 输出，将其发送到 WebSocket (FastAPI version)，并存储到数据库。
+    读取 PTY 输出，将其发送到 WebSocket (FastAPI version)。不再存储到数据库。
     """
     try:
         while True:
@@ -118,8 +117,6 @@ async def pty_output_to_websocket_and_db(
                     )
                     break
 
-                await db.add_pty_log(session_id, str_data, MAX_LOG_HISTORY)
-
             except Exception as e_read:
                 logger.error(
                     f"会话 {session_id} 的 PTY 读取错误 (PTY 进程可能已关闭): {e_read}"
@@ -139,6 +136,7 @@ async def handle_websocket_connection(
     """
     处理单个 WebSocket 连接 (FastAPI version)。
     session_id 是从路径中提取的部分，例如 "yourinstanceid_main"。
+    不再发送历史日志。
     """
     await websocket.accept()
     logger.info(
@@ -179,17 +177,6 @@ async def handle_websocket_connection(
             return
 
     try:
-        historical_logs = await db.get_pty_logs(session_id, MAX_LOG_HISTORY)
-        if historical_logs:
-            logger.info(
-                f"正在向客户端发送 {len(historical_logs)} 条会话 {session_id} 的历史日志。"
-            )
-            log_batch = [log.log_content for log in historical_logs]
-            if websocket.client_state != WebSocketState.CONNECTED:
-                logger.warning(f"发送会话 {session_id} 的历史日志前 WebSocket 已关闭。")
-                return
-            await websocket.send_json({"type": "history", "data": log_batch})
-
         if websocket.client_state != WebSocketState.CONNECTED:
             logger.warning(f"启动 PTY 前 WebSocket 已为会话 {session_id} 关闭。")
             return

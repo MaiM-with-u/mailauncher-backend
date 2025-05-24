@@ -22,18 +22,6 @@ class Instances(SQLModel, table=True):
     qq_number: int  # 实例的 QQ 号码 (如果适用)
 
 
-# 新增 PtyLog 模型
-class PtyLog(SQLModel, table=True):
-    id: Optional[int] = Field(default=None, primary_key=True)  # 数据库内部ID，主键
-    session_id: str = Field(
-        index=True
-    )  # 例如："instanceid_main", "instanceid_napcat_ada"
-    timestamp: datetime.datetime = Field(
-        default_factory=datetime.datetime.utcnow, index=True
-    )  # 日志条目的时间戳 (UTC)
-    log_content: str  # PTY 输出的实际日志内容
-
-
 class Services(SQLModel, table=True):
     id: Optional[int] = Field(
         default=None, primary_key=True

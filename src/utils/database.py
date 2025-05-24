@@ -1,11 +1,11 @@
 import os
 from rich.traceback import install
 from sqlmodel import create_engine, SQLModel, Session, select
-from typing import List, Optional
+from typing import Optional
 
 # PtyLog 模型现在从 database_model.py 导入
 # 确保 Services 也被导入
-from src.utils.database_model import PtyLog, Services
+from src.utils.database_model import Services
 from src.utils.logger import get_module_logger  # 添加 logger 导入
 
 install(extra_lines=3)  # rich traceback 安装，用于美化异常输出
@@ -40,56 +40,6 @@ def create_db_and_tables():
 class Database:
     def __init__(self, engine_to_use):
         self.engine = engine_to_use
-
-    async def add_pty_log(self, session_id: str, log_content: str, max_history: int):
-        """
-        向数据库添加一条 PTY 日志，并根据 max_history 修剪旧日志。
-        """
-        with Session(self.engine) as session:
-            # 添加新日志
-            db_log = PtyLog(session_id=session_id, log_content=log_content)
-            session.add(db_log)
-
-            # 如果需要，修剪旧日志
-            # 计算当前会话的日志数量
-            # SQLAlchemy 核心方式 (更高效，但需要导入 func):
-            # from sqlalchemy import func
-            # count_statement = select(func.count(PtyLog.id)).where(PtyLog.session_id == session_id)
-            # current_log_count = session.exec(count_statement).scalar_one_or_none() or 0
-
-            # 使用 select().all() 然后 len() 的简化方式
-            statement_count = select(PtyLog).where(PtyLog.session_id == session_id)
-            results_count = session.exec(statement_count).all()
-            current_log_count = len(results_count)
-
-            if current_log_count > max_history:
-                num_to_delete = current_log_count - max_history
-                # 查询要删除的最旧的日志条目
-                statement_oldest = (
-                    select(PtyLog)
-                    .where(PtyLog.session_id == session_id)
-                    .order_by(PtyLog.timestamp)  # 最旧的在前
-                    .limit(num_to_delete)
-                )
-                logs_to_delete = session.exec(statement_oldest).all()
-                for log_item in logs_to_delete:
-                    session.delete(log_item)
-
-            session.commit()  # 提交事务
-
-    async def get_pty_logs(self, session_id: str, limit: int) -> List[PtyLog]:
-        """
-        从数据库检索指定会话的 PTY 日志，按时间顺序（从旧到新）。
-        """
-        with Session(self.engine) as session:
-            statement = (
-                select(PtyLog)
-                .where(PtyLog.session_id == session_id)
-                .order_by(PtyLog.timestamp.desc())  # 最新的在前
-                .limit(limit)
-            )
-            results = session.exec(statement).all()
-            return results[::-1]  # 返回按时间顺序排列的结果 (最旧的在前)
 
     async def get_service_details(
         self, instance_id: str, service_name: str
