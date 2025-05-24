@@ -77,7 +77,7 @@ class DeployManager:
         logger.debug(f"执行的 Git 命令: {' '.join(clone_command)}")
 
         try:
-            logger.info(f"开始执行 Git clone 命令...")
+            logger.info("开始执行 Git clone 命令...")
             process = subprocess.Popen(
                 clone_command,
                 stdout=subprocess.PIPE,
@@ -130,7 +130,7 @@ class DeployManager:
                 logger.info(f"由于超时，正在终止 Git 进程 (PID: {process.pid if hasattr(process, 'pid') else 'N/A'}) ")
                 process.kill()
                 process.communicate()
-                logger.info(f"Git 进程已终止。")
+                logger.info("Git 进程已终止。")
             return False
         except Exception as e:
             logger.error(
