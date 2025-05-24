@@ -31,5 +31,6 @@ class Services(SQLModel, table=True):
     )  # 关联到Instances表的instance_id，表示该服务属于哪个实例
     name: str  # 服务的名称 (例如, "chat-service", "database-service")
     path: str  # 服务相关文件或可执行文件的路径
+    run_cmd: str  # 实例的启动命令
     status: str  # 服务的当前状态 (例如, "active", "inactive", "pending")
     port: int  # 服务运行时占用的端口号（如果适用）
