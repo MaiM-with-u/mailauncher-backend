@@ -4,6 +4,6 @@ tomli
 loguru
 sqlmodel
 psutil
-winpty
+pywinpty
 python-multipart
 pydantic
