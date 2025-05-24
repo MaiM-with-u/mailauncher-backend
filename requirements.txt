@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+tomli
+loguru
+sqlmodel
+psutil
+winpty
+python-multipart
+pydantic
