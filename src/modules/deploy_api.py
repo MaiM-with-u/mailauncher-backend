@@ -171,7 +171,9 @@ async def get_available_versions() -> AvailableVersionsResponse:
     获取可用于部署的版本列表。
     """
     github_api_url: str = "https://api.github.com/repos/MaiM-with-u/MaiBot/tags"
-    gitee_api_url: str = "https://gitee.com/api/v5/repos/DrSmooth/MaiBot/tags"  # 备用 Gitee API URL
+    gitee_api_url: str = (
+        "https://gitee.com/api/v5/repos/DrSmooth/MaiBot/tags"  # 备用 Gitee API URL
+    )
     default_versions: List[str] = ["main"]  # 移除了 "latest"
 
     async def fetch_versions_from_url(url: str, source_name: str) -> List[str]:
@@ -184,7 +186,10 @@ async def get_available_versions() -> AvailableVersionsResponse:
             versions: List[str] = [
                 tag["name"]
                 for tag in tags_data
-                if "name" in tag and isinstance(tag["name"], str) and tag["name"].startswith("0.6") and tag["name"] != "EasyInstall-windows"
+                if "name" in tag
+                and isinstance(tag["name"], str)
+                and tag["name"].startswith("0.6")
+                and tag["name"] != "EasyInstall-windows"
             ]
             # 不再强制添加 "latest"
             if "main" not in versions:  # 仍然保留 main
@@ -197,9 +202,11 @@ async def get_available_versions() -> AvailableVersionsResponse:
         # 如果过滤后没有0.6.x的版本，但有main，则返回main
         if not any(v.startswith("0.6") for v in versions) and "main" in versions:
             logger.info("GitHub 中未找到 0.6.x 版本，但存在 main 版本。")
-        elif not versions: # 如果 GitHub 返回空列表（无0.6.x也无main）
+        elif not versions:  # 如果 GitHub 返回空列表（无0.6.x也无main）
             logger.warning("GitHub 未返回任何有效版本，尝试 Gitee。")
-            raise httpx.RequestError("No valid versions from GitHub") # 抛出异常以触发 Gitee 逻辑
+            raise httpx.RequestError(
+                "No valid versions from GitHub"
+            )  # 抛出异常以触发 Gitee 逻辑
 
         return AvailableVersionsResponse(versions=versions)
     except (httpx.HTTPStatusError, httpx.RequestError) as e_gh:
@@ -210,9 +217,11 @@ async def get_available_versions() -> AvailableVersionsResponse:
             versions: List[str] = await fetch_versions_from_url(gitee_api_url, "Gitee")
             if not any(v.startswith("0.6") for v in versions) and "main" in versions:
                 logger.info("Gitee 中未找到 0.6.x 版本，但存在 main 版本。")
-            elif not versions: # 如果 Gitee 也返回空列表
+            elif not versions:  # 如果 Gitee 也返回空列表
                 logger.warning("Gitee 未返回任何有效版本，返回默认版本。")
-                return AvailableVersionsResponse(versions=default_versions) # 返回仅包含 "main" 的默认列表
+                return AvailableVersionsResponse(
+                    versions=default_versions
+                )  # 返回仅包含 "main" 的默认列表
 
             return AvailableVersionsResponse(versions=versions)
         except (httpx.HTTPStatusError, httpx.RequestError) as e_gt:
