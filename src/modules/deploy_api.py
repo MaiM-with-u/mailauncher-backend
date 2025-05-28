@@ -38,7 +38,7 @@ class DeployRequest(BaseModel):
     install_path: str = Field(..., description="MaiBot 安装路径")
     port: int = Field(..., description="MaiBot 主程序端口")
     version: str = Field(..., description="要部署的 MaiBot 版本")
-    qq_number: Optional[str] = Field(None, description="关联的QQ号")
+    # qq_number: Optional[str] = Field(None, description="关联的QQ号")
 
 
 class DeployResponse(BaseModel):
@@ -133,7 +133,6 @@ async def deploy_maibot(payload: DeployRequest = Body(...)):
                 path=payload.install_path,
                 status=InstanceStatus.STARTING,
                 port=payload.port,
-                qq_number=payload.qq_number,
                 instance_id=instance_id_str,
                 db_session=session,
             )

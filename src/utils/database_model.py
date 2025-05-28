@@ -19,7 +19,7 @@ class Instances(SQLModel, table=True):
     created_at: datetime.datetime = Field(
         default_factory=datetime.datetime.now
     )  # 实例创建时间
-    qq_number: int  # 实例的 QQ 号码 (如果适用)
+    # qq_number: int  # 实例的 QQ 号码 (如果适用)
 
 
 class Services(SQLModel, table=True):
