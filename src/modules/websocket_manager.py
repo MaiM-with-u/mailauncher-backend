@@ -292,7 +292,7 @@ async def handle_websocket_connection(
 
             try:
                 msg_data = json.loads(message_str)
-                msg_type = msg_data.get("type")                
+                msg_type = msg_data.get("type")
                 if msg_type == "input":
                     pty_input_data = msg_data.get("data")
                     if isinstance(pty_input_data, str):
