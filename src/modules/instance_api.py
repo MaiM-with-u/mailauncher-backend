@@ -235,9 +235,9 @@ async def get_instances():
                 ]
 
                 # installedAt 可能是 datetime 对象，需要转换为字符串
-                installed_at_str = (
-                    db_instance.installed_at.isoformat()
-                    if db_instance.installed_at
+                created_at_str = (
+                    db_instance.created_at.isoformat()
+                    if db_instance.created_at
                     else None
                 )
 
@@ -247,7 +247,7 @@ async def get_instances():
                     status=db_instance.status.value
                     if isinstance(db_instance.status, InstanceStatus)
                     else db_instance.status,  # 处理枚举类型
-                    installedAt=installed_at_str,  # 使用转换后的字符串
+                    installedAt=created_at_str,  # 使用转换后的字符串
                     path=db_instance.path,
                     port=db_instance.port,
                     services=services_details,
