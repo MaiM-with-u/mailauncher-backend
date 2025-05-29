@@ -39,12 +39,33 @@ class DiskUsage(BaseModel):
     percent: float
 
 
+class NetworkInterface(BaseModel):
+    name: str
+    bytes_sent: int
+    bytes_recv: int
+    packets_sent: int
+    packets_recv: int
+    errin: int
+    errout: int
+    dropin: int
+    dropout: int
+
+
+class NetworkStats(BaseModel):
+    interfaces: list[NetworkInterface]
+    total_bytes_sent: int
+    total_bytes_recv: int
+    total_packets_sent: int
+    total_packets_recv: int
+
+
 class SystemMetricsData(BaseModel):
     system_info: SystemInfo
     python_version: str
     cpu_usage_percent: float
     memory_usage: MemoryUsage
     disk_usage_root: DiskUsage
+    network_stats: NetworkStats
 
 
 class SystemMetricsResponse(BaseModel):
@@ -105,8 +126,45 @@ async def get_system_metrics():
         percent=disk.percent,
     )
 
+    # Network Statistics
+    net_io = psutil.net_io_counters(pernic=True)
+    network_interfaces = []
+    total_bytes_sent = 0
+    total_bytes_recv = 0
+    total_packets_sent = 0
+    total_packets_recv = 0
+
+    for interface_name, stats in net_io.items():
+        # 排除回环接口和虚拟接口
+        if interface_name != "lo" and not interface_name.startswith("vir"):
+            network_interfaces.append(
+                NetworkInterface(
+                    name=interface_name,
+                    bytes_sent=stats.bytes_sent,
+                    bytes_recv=stats.bytes_recv,
+                    packets_sent=stats.packets_sent,
+                    packets_recv=stats.packets_recv,
+                    errin=stats.errin,
+                    errout=stats.errout,
+                    dropin=stats.dropin,
+                    dropout=stats.dropout,
+                )
+            )
+            total_bytes_sent += stats.bytes_sent
+            total_bytes_recv += stats.bytes_recv
+            total_packets_sent += stats.packets_sent
+            total_packets_recv += stats.packets_recv
+
+    network_stats = NetworkStats(
+        interfaces=network_interfaces,
+        total_bytes_sent=total_bytes_sent,
+        total_bytes_recv=total_bytes_recv,
+        total_packets_sent=total_packets_sent,
+        total_packets_recv=total_packets_recv,
+    )
+
     logger.debug(
-        f"系统指标数据: cpu={cpu_usage_percent}%, mem={memory_usage.percent}%, disk={disk_usage_root.percent}%"
+        f"系统指标数据: cpu={cpu_usage_percent}%, mem={memory_usage.percent}%, disk={disk_usage_root.percent}%, network_interfaces={len(network_interfaces)}"
     )  # 添加日志
     return SystemMetricsResponse(
         status="success",
@@ -116,5 +174,6 @@ async def get_system_metrics():
             cpu_usage_percent=cpu_usage_percent,
             memory_usage=memory_usage,
             disk_usage_root=disk_usage_root,
+            network_stats=network_stats,
         ),
     )
