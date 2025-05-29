@@ -53,6 +53,6 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['D:\\UserData\\Desktop\\maimai.ico'],
+    icon=['.\\assets\\maimai.ico'],
     version='version_info.txt',
 )
