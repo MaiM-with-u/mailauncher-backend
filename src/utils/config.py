@@ -1,6 +1,6 @@
 import os
 import sys
-import tomli
+import tomllib
 import shutil
 from loguru import logger
 
@@ -17,15 +17,14 @@ class Config:
     def _get_config_path(self):
         self.config_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "config.toml")
-        )
-
+        )    
     def load_config(self):  # sourcery skip: extract-method, move-assign
         include_configs = ["inner", "server", "debug"]
         if os.path.exists(self.config_path):
             with open(self.config_path, "rb") as f:
                 try:
-                    raw_config = tomli.load(f)
-                except tomli.TOMLDecodeError as e:
+                    raw_config = tomllib.load(f)
+                except tomllib.TOMLDecodeError as e:
                     logger.critical(
                         f"配置文件bot_config.toml填写有误，请检查第{e.lineno}行第{e.colno}处：{e.msg}"
                     )
