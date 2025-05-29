@@ -1,4 +1,5 @@
 import os
+import sys
 from rich.traceback import install
 from sqlmodel import create_engine, SQLModel, Session, select
 from typing import Optional
@@ -10,9 +11,27 @@ from src.utils.logger import get_module_logger  # 添加 logger 导入
 
 install(extra_lines=3)  # rich traceback 安装，用于美化异常输出
 
+
+def get_resource_path(relative_path):
+    """获取资源文件的绝对路径，支持PyInstaller打包环境"""
+    try:
+        # PyInstaller打包环境：获取exe文件所在目录
+        # 使用sys.executable获取exe文件路径，而不是临时目录
+        if hasattr(sys, '_MEIPASS'):
+            # 在PyInstaller环境中，数据文件应该放在exe同级目录
+            base_path = os.path.dirname(sys.executable)
+        else:
+            # 这个分支实际上不会执行，但保留以防万一
+            base_path = sys._MEIPASS
+    except AttributeError:
+        # 开发环境中的路径
+        base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    
+    return os.path.join(base_path, relative_path)
+
+
 # 定义数据库文件路径
-ROOT_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-_DB_DIR = os.path.join(ROOT_PATH, "data")
+_DB_DIR = get_resource_path("data")
 _DB_FILE = os.path.join(_DB_DIR, "MaiLauncher.db")
 
 # 确保数据库目录存在

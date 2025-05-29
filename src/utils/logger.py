@@ -1,11 +1,31 @@
 from loguru import logger
 from typing import Optional, Union, List, Tuple
 import sys
+import os
 
 # import os
 from types import ModuleType
 from pathlib import Path
 from .config import global_config
+
+
+def get_resource_path(relative_path):
+    """获取资源文件的绝对路径，支持PyInstaller打包环境"""
+    try:
+        # PyInstaller打包环境：获取exe文件所在目录
+        # 使用sys.executable获取exe文件路径，而不是临时目录
+        if hasattr(sys, '_MEIPASS'):
+            # 在PyInstaller环境中，数据文件应该放在exe同级目录
+            base_path = os.path.dirname(sys.executable)
+        else:
+            # 这个分支实际上不会执行，但保留以防万一
+            base_path = sys._MEIPASS
+    except AttributeError:
+        # 开发环境中的路径
+        base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    
+    return os.path.join(base_path, relative_path)
+
 
 # 保存原生处理器ID
 default_handler_id = None
@@ -26,7 +46,7 @@ _custom_style_handlers: dict[Tuple[str, str], List[int]] = {}  # 记录自定义
 
 # 获取日志存储根地址
 current_file_path = Path(__file__).resolve()
-LOG_ROOT = "logs"
+LOG_ROOT = get_resource_path("logs")
 
 # LOG_LEVEL = global_config.get("Debug", {}).get("level", "INFO").upper()
 # print(global_config.debug_level)
@@ -109,10 +129,8 @@ def get_module_logger(
         and "custom_style" not in record["extra"],
         enqueue=True,
     )
-    handler_ids.append(console_id)
-
-    # 文件处理器
-    log_dir = Path("logs")
+    handler_ids.append(console_id)    # 文件处理器
+    log_dir = Path(get_resource_path("logs"))
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / "{time:YYYY-MM-DD}.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
