@@ -112,6 +112,17 @@ class InstanceManager:
         try:
             with Session(engine) as session:
                 result = session.exec(query).first()
+                if result:
+                    # 在 session 关闭前访问所有需要的属性，避免 DetachedInstanceError
+                    # 触发属性加载以确保数据在 session 关闭后仍然可用
+                    _ = result.id
+                    _ = result.instance_id
+                    _ = result.name
+                    _ = result.version
+                    _ = result.path
+                    _ = result.status
+                    _ = result.port
+                    _ = result.created_at
                 session.commit()
                 return result
         except Exception as e:
@@ -181,7 +192,7 @@ class InstanceManager:
                     logger.info(f"实例 {name} ({instance_id}) 创建成功并已提交。")
                     return Instance.from_db_model(db_model_instance)
             except Exception as e:
-                logger.error(f"创建并提交实例 {name} ({instance_id}) 时出错: {e}")
+                logger.error(f"创建并提交实例 {name} ({instance_id}) 时出错: {e}")                
                 return None
 
     def get_instance(self, instance_id: str) -> Optional[Instance]:
@@ -194,10 +205,17 @@ class InstanceManager:
         返回:
             Optional[Instance]: 如果找到实例，则返回 Instance 对象，否则返回 None。
         """
-        statement = select(Instances).where(Instances.instance_id == instance_id)
-        if db_instance := self._execute_query(statement, "获取实例", instance_id):
-            return Instance.from_db_model(db_instance)
-        return None
+        try:
+            with Session(engine) as session:
+                statement = select(Instances).where(Instances.instance_id == instance_id)
+                db_instance = session.exec(statement).first()
+                if db_instance:
+                    # 在 session 活跃时创建 Instance 对象，避免 DetachedInstanceError
+                    return Instance.from_db_model(db_instance)
+                return None
+        except Exception as e:
+            logger.error(f"获取实例时出错 (实例ID: {instance_id}): {e}")
+            return None
 
     def get_all_instances(self) -> List[Instance]:
         """

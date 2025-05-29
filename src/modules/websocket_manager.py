@@ -49,7 +49,7 @@ async def get_pty_command_and_cwd_from_instance(
 
     if type_part == "main":
         # 主程序 PTY 配置
-        pty_command = "python .\\bot.py"
+        pty_command = "python bot.py"
         pty_cwd = instance.path
         logger.info(
             f"为 'main' 类型 (实例 '{instance_short_id}') 配置 PTY: 命令='{pty_command}', CWD='{pty_cwd}'"
@@ -133,17 +133,25 @@ async def pty_output_to_websocket(
     try:
         while True:
             try:
-                byte_data: bytes = await asyncio.to_thread(pty_process.read, 10240)
-                if not byte_data:
+                data = await asyncio.to_thread(pty_process.read, 10240)
+                if not data:
                     logger.info(f"PTY 读取为会话 {session_id} 返回了无数据 (EOF)。")
                     break
-                try:
-                    str_data = byte_data.decode("utf-8")
-                except UnicodeDecodeError:
-                    str_data = byte_data.decode("utf-8", errors="replace")
-                    logger.warning(
-                        f"会话 {session_id} 发生 Unicode 解码错误，已使用替换字符。"
-                    )
+                
+                # 处理可能返回字节或字符串的情况
+                if isinstance(data, bytes):
+                    try:
+                        str_data = data.decode("utf-8")
+                    except UnicodeDecodeError:
+                        str_data = data.decode("utf-8", errors="replace")
+                        logger.warning(
+                            f"会话 {session_id} 发生 Unicode 解码错误，已使用替换字符。"
+                        )
+                elif isinstance(data, str):
+                    str_data = data
+                else:
+                    logger.warning(f"会话 {session_id} 的 PTY 返回了未知类型的数据: {type(data)}")
+                    str_data = str(data)
 
                 if websocket.client_state == WebSocketState.CONNECTED:
                     try:
