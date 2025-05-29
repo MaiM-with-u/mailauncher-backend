@@ -17,7 +17,7 @@ def get_resource_path(relative_path):
     try:
         # PyInstaller打包环境：获取exe文件所在目录
         # 使用sys.executable获取exe文件路径，而不是临时目录
-        if hasattr(sys, '_MEIPASS'):
+        if hasattr(sys, "_MEIPASS"):
             # 在PyInstaller环境中，数据文件应该放在exe同级目录
             base_path = os.path.dirname(sys.executable)
         else:
@@ -26,7 +26,7 @@ def get_resource_path(relative_path):
     except AttributeError:
         # 开发环境中的路径
         base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    
+
     return os.path.join(base_path, relative_path)
 
 
