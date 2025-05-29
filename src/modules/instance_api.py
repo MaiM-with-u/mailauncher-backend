@@ -136,33 +136,35 @@ async def _start_pty_process(
         ):
             # 虚拟终端已存在
             pty_info = active_ptys[session_id]
-            
+
             # 检查是否已经启动了命令
             if pty_info.get("command_started", False):
                 logger.info(f"会话 {session_id} 的命令已在运行。")
                 return True
-            
+
             # 向现有的虚拟终端发送启动命令
             pty_process = pty_info["pty"]
-            
+
             try:
                 # 切换到正确的工作目录
                 if pty_cwd and pty_cwd != pty_info.get("working_directory"):
-                    cd_command = f"cd /d \"{pty_cwd}\"\r\n"
+                    cd_command = f'cd /d "{pty_cwd}"\r\n'
                     pty_process.write(cd_command)
                     logger.info(f"已切换到工作目录: {pty_cwd}")
-                
+
                 # 发送启动命令
                 start_command = f"{pty_command_str}\r\n"
                 pty_process.write(start_command)
-                
+
                 # 标记命令已启动
                 pty_info["command_started"] = True
                 pty_info["working_directory"] = pty_cwd
-                
-                logger.info(f"已向现有虚拟终端发送启动命令 (会话: {session_id}): {pty_command_str}")
+
+                logger.info(
+                    f"已向现有虚拟终端发送启动命令 (会话: {session_id}): {pty_command_str}"
+                )
                 return True
-                
+
             except Exception as e:
                 logger.error(f"向会话 {session_id} 的虚拟终端发送命令失败: {e}")
                 return False

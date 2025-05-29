@@ -236,12 +236,12 @@ async def handle_websocket_connection(
                 # PTY 已存在，直接连接到现有进程
                 pty_info = active_ptys[session_id]
                 pty_process = pty_info["pty"]
-                
+
                 # 更新 WebSocket 连接
                 pty_info["ws"] = websocket
-                
+
                 logger.info(f"连接到现有的 PTY 进程 (会话: {session_id})")
-                
+
                 # 如果 PTY 已经在运行命令，启动输出读取任务
                 if pty_info.get("command_started", False):
                     read_task = asyncio.create_task(
@@ -251,26 +251,30 @@ async def handle_websocket_connection(
             else:
                 # 创建新的虚拟终端，但不执行命令
                 logger.info(f"为会话 {session_id} 创建虚拟终端 (不执行命令)")
-                
+
                 # 获取工作目录
                 pty_cwd = None
                 if type_part == "main":
                     pty_cwd = instance.path
                 else:
                     # 对于服务，从数据库获取服务详情
-                    service_details = await db.get_service_details(instance_short_id, type_part)
+                    service_details = await db.get_service_details(
+                        instance_short_id, type_part
+                    )
                     if service_details and service_details.path:
                         pty_cwd = service_details.path
                     else:
                         pty_cwd = instance.path  # 回退到实例路径
-                
+
                 # 创建空的 PTY 进程（使用 cmd 作为默认 shell）
                 pty_process = PtyProcess.spawn(
                     ["cmd.exe"],  # 使用 Windows cmd 作为默认 shell
                     dimensions=(PTY_ROWS_DEFAULT, PTY_COLS_DEFAULT),
                     cwd=pty_cwd,
                 )
-                logger.info(f"虚拟终端已创建 (会话: {session_id}, PID: {pty_process.pid})")
+                logger.info(
+                    f"虚拟终端已创建 (会话: {session_id}, PID: {pty_process.pid})"
+                )
 
                 # 保存到 active_ptys，标记为未开始命令
                 async with active_ptys_lock:
@@ -288,7 +292,7 @@ async def handle_websocket_connection(
                 read_task = asyncio.create_task(
                     pty_output_to_websocket(session_id, pty_process, websocket, db)
                 )
-                
+
                 async with active_ptys_lock:
                     if session_id in active_ptys:
                         active_ptys[session_id]["output_task"] = read_task
@@ -305,13 +309,14 @@ async def handle_websocket_connection(
         if websocket.client_state == WebSocketState.CONNECTED:
             status_msg = f"已连接到 {type_part} 终端"
             async with active_ptys_lock:
-                if session_id in active_ptys and not active_ptys[session_id].get("command_started", False):
+                if session_id in active_ptys and not active_ptys[session_id].get(
+                    "command_started", False
+                ):
                     status_msg += " (等待启动命令)"
-            
-            await websocket.send_json({
-                "type": "status", 
-                "message": status_msg
-            })        # 处理 WebSocket 消息
+
+            await websocket.send_json(
+                {"type": "status", "message": status_msg}
+            )  # 处理 WebSocket 消息
         while True:
             try:
                 message_str = await websocket.receive_text()
@@ -326,14 +331,19 @@ async def handle_websocket_connection(
                                 if pty_process and pty_process.isalive():
                                     pty_process.write(pty_input_data)
                                 else:
-                                    logger.warning(f"PTY 进程已停止，无法发送消息 (会话: {session_id})")
+                                    logger.warning(
+                                        f"PTY 进程已停止，无法发送消息 (会话: {session_id})"
+                                    )
                                     break
                             except Exception as e_write:
                                 logger.error(
                                     f"向会话 {session_id} 的 PTY 写入时出错: {e_write}"
                                 )
                                 if not pty_process.isalive():
-                                    if websocket.client_state == WebSocketState.CONNECTED:
+                                    if (
+                                        websocket.client_state
+                                        == WebSocketState.CONNECTED
+                                    ):
                                         await websocket.send_json(
                                             {
                                                 "type": "status",
@@ -390,7 +400,7 @@ async def handle_websocket_connection(
         )
     finally:
         logger.info(f"正在为会话 {session_id} 进行清理...")
-        
+
         # 取消输出任务
         if read_task and not read_task.done():
             read_task.cancel()
