@@ -290,13 +290,12 @@ async def handle_websocket_connection(
 
             try:
                 msg_data = json.loads(message_str)
-                msg_type = msg_data.get("type")
-
+                msg_type = msg_data.get("type")                
                 if msg_type == "input":
                     pty_input_data = msg_data.get("data")
                     if isinstance(pty_input_data, str):
                         try:
-                            pty_process.write(pty_input_data.encode("utf-8"))
+                            pty_process.write(pty_input_data)
                         except Exception as e_write:
                             logger.error(
                                 f"向会话 {session_id} 的 PTY 写入时出错: {e_write}"
