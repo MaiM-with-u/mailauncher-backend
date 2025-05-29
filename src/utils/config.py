@@ -18,6 +18,9 @@ class Config:
         self.config_path = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "..", "config.toml")
         )
+        self.root_path = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "..")
+        )
 
     def load_config(self):  # sourcery skip: extract-method, move-assign
         include_configs = ["inner", "server", "debug"]
