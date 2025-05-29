@@ -137,7 +137,7 @@ async def pty_output_to_websocket(
                 if not data:
                     logger.info(f"PTY 读取为会话 {session_id} 返回了无数据 (EOF)。")
                     break
-                
+
                 # 处理可能返回字节或字符串的情况
                 if isinstance(data, bytes):
                     try:
@@ -150,7 +150,9 @@ async def pty_output_to_websocket(
                 elif isinstance(data, str):
                     str_data = data
                 else:
-                    logger.warning(f"会话 {session_id} 的 PTY 返回了未知类型的数据: {type(data)}")
+                    logger.warning(
+                        f"会话 {session_id} 的 PTY 返回了未知类型的数据: {type(data)}"
+                    )
                     str_data = str(data)
 
                 if websocket.client_state == WebSocketState.CONNECTED:

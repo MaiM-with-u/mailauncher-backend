@@ -192,7 +192,7 @@ class InstanceManager:
                     logger.info(f"实例 {name} ({instance_id}) 创建成功并已提交。")
                     return Instance.from_db_model(db_model_instance)
             except Exception as e:
-                logger.error(f"创建并提交实例 {name} ({instance_id}) 时出错: {e}")                
+                logger.error(f"创建并提交实例 {name} ({instance_id}) 时出错: {e}")
                 return None
 
     def get_instance(self, instance_id: str) -> Optional[Instance]:
@@ -207,7 +207,9 @@ class InstanceManager:
         """
         try:
             with Session(engine) as session:
-                statement = select(Instances).where(Instances.instance_id == instance_id)
+                statement = select(Instances).where(
+                    Instances.instance_id == instance_id
+                )
                 db_instance = session.exec(statement).first()
                 if db_instance:
                     # 在 session 活跃时创建 Instance 对象，避免 DetachedInstanceError
