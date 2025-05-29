@@ -3,7 +3,6 @@ from fastapi import WebSocket
 from starlette.websockets import WebSocketState, WebSocketDisconnect
 from winpty import PtyProcess  # type: ignore
 import json
-import shlex
 from typing import Dict, Any, Tuple, Optional
 import logging
 
@@ -194,155 +193,193 @@ async def handle_websocket_connection(
     处理单个 WebSocket 连接 (FastAPI version)。
     session_id 是从路径中提取的部分，例如 "yourinstanceid_main"。
     不再发送历史日志。
+    创建虚拟终端但不直接执行命令，等待前端调用实例启动API后才开始运行。
     """
     await websocket.accept()
     logger.info(
         f"客户端已连接 (FastAPI)，会话 ID: {session_id}，来自 {websocket.client.host}:{websocket.client.port}"
     )
 
-    pty_process: Optional[PtyProcess] = None
-    read_task: Optional[asyncio.Task] = None
-
-    pty_command_str, pty_cwd, _ = await get_pty_command_and_cwd_from_instance(
-        session_id
-    )
-
-    if not pty_command_str:
-        err_msg = f"无法确定会话 {session_id} 的 PTY 命令。实例或类型可能无效或未配置。"
+    # 解析 session_id 获取实例 ID 和类型
+    parts = session_id.rpartition("_")
+    if not parts[1]:
+        err_msg = f"WebSocket 会话 ID 格式无效 (缺少类型部分): {session_id}"
         logger.error(err_msg)
         if websocket.client_state == WebSocketState.CONNECTED:
             await websocket.send_json({"type": "error", "message": err_msg})
-            await websocket.close(code=1008)
+            await websocket.close(code=1003)
         return
 
-    async with active_ptys_lock:
-        if (
-            session_id in active_ptys
-            and active_ptys[session_id].get("pty")
-            and active_ptys[session_id]["pty"].isalive()
-        ):
-            logger.warning(f"会话 {session_id} 已激活。正在关闭新的连接。")
-            if websocket.client_state == WebSocketState.CONNECTED:
-                try:
-                    await websocket.send_json(
-                        {"type": "error", "message": "会话已被其他客户端激活。"}
-                    )
-                except RuntimeError:
-                    pass
-            if websocket.client_state == WebSocketState.CONNECTED:
-                await websocket.close(code=1008)
-            return
+    instance_short_id, _, type_part = parts
+
+    # 验证实例是否存在
+    instance = instance_manager.get_instance(instance_short_id)
+    if not instance:
+        err_msg = f"未找到实例 '{instance_short_id}'"
+        logger.error(err_msg)
+        if websocket.client_state == WebSocketState.CONNECTED:
+            await websocket.send_json({"type": "error", "message": err_msg})
+            await websocket.close(code=1003)
+        return
+
+    pty_process: Optional[PtyProcess] = None
+    read_task: Optional[asyncio.Task] = None
 
     try:
-        if websocket.client_state != WebSocketState.CONNECTED:
-            logger.warning(f"启动 PTY 前 WebSocket 已为会话 {session_id} 关闭。")
+        # 检查是否已经有活跃的 PTY 进程
+        async with active_ptys_lock:
+            if (
+                session_id in active_ptys
+                and active_ptys[session_id].get("pty")
+                and active_ptys[session_id]["pty"].isalive()
+            ):
+                # PTY 已存在，直接连接到现有进程
+                pty_info = active_ptys[session_id]
+                pty_process = pty_info["pty"]
+                
+                # 更新 WebSocket 连接
+                pty_info["ws"] = websocket
+                
+                logger.info(f"连接到现有的 PTY 进程 (会话: {session_id})")
+                
+                # 如果 PTY 已经在运行命令，启动输出读取任务
+                if pty_info.get("command_started", False):
+                    read_task = asyncio.create_task(
+                        pty_output_to_websocket(session_id, pty_process, websocket, db)
+                    )
+                    pty_info["output_task"] = read_task
+            else:
+                # 创建新的虚拟终端，但不执行命令
+                logger.info(f"为会话 {session_id} 创建虚拟终端 (不执行命令)")
+                
+                # 获取工作目录
+                pty_cwd = None
+                if type_part == "main":
+                    pty_cwd = instance.path
+                else:
+                    # 对于服务，从数据库获取服务详情
+                    service_details = await db.get_service_details(instance_short_id, type_part)
+                    if service_details and service_details.path:
+                        pty_cwd = service_details.path
+                    else:
+                        pty_cwd = instance.path  # 回退到实例路径
+                
+                # 创建空的 PTY 进程（使用 cmd 作为默认 shell）
+                pty_process = PtyProcess.spawn(
+                    ["cmd.exe"],  # 使用 Windows cmd 作为默认 shell
+                    dimensions=(PTY_ROWS_DEFAULT, PTY_COLS_DEFAULT),
+                    cwd=pty_cwd,
+                )
+                logger.info(f"虚拟终端已创建 (会话: {session_id}, PID: {pty_process.pid})")
+
+                # 保存到 active_ptys，标记为未开始命令
+                async with active_ptys_lock:
+                    active_ptys[session_id] = {
+                        "pty": pty_process,
+                        "ws": websocket,
+                        "output_task": None,
+                        "instance_part": instance_short_id,
+                        "type_part": type_part,
+                        "command_started": False,  # 标记命令尚未开始
+                        "working_directory": pty_cwd,
+                    }
+
+                # 启动输出读取任务（用于显示 shell 提示符）
+                read_task = asyncio.create_task(
+                    pty_output_to_websocket(session_id, pty_process, websocket, db)
+                )
+                
+                async with active_ptys_lock:
+                    if session_id in active_ptys:
+                        active_ptys[session_id]["output_task"] = read_task
+
+        if not pty_process:
+            err_msg = f"无法创建虚拟终端 (会话: {session_id})"
+            logger.error(err_msg)
+            if websocket.client_state == WebSocketState.CONNECTED:
+                await websocket.send_json({"type": "error", "message": err_msg})
+                await websocket.close(code=1003)
             return
 
-        try:
-            cmd_to_spawn_list = shlex.split(pty_command_str)
-            if not cmd_to_spawn_list:
-                raise ValueError("命令字符串 shlex.split 后产生空列表")
-        except ValueError as e_shlex:
-            logger.warning(
-                f"会话 {session_id} 的 PTY_COMMAND ('{pty_command_str}') 无法被 shlex 分割: {e_shlex}。将按原样使用。"
-            )
-            cmd_to_spawn_list = pty_command_str  # type: ignore
-
-        pty_process = PtyProcess.spawn(
-            cmd_to_spawn_list,
-            dimensions=(PTY_ROWS_DEFAULT, PTY_COLS_DEFAULT),
-            cwd=pty_cwd,
-        )
-        logger.info(
-            f"PTY 进程 (PID: {pty_process.pid}) 已为会话 {session_id} 启动，命令: '{pty_command_str}'，CWD: {pty_cwd or '默认'}"
-        )
-
-        instance_short_id, _, type_part = session_id.rpartition("_")
-        async with active_ptys_lock:
-            active_ptys[session_id] = {
-                "pty": pty_process,
-                "ws": websocket,
-                "output_task": None,
-                "instance_part": instance_short_id,
-                "type_part": type_part,
-            }
-
-        read_task = asyncio.create_task(
-            pty_output_to_websocket(session_id, pty_process, websocket, db)
-        )
-        async with active_ptys_lock:
-            if session_id in active_ptys:
-                active_ptys[session_id]["output_task"] = read_task
-            else:
-                logger.error(
-                    f"会话 {session_id} 在存储 output_task 前消失。正在取消任务。"
-                )
-                read_task.cancel()
-
+        # 发送连接成功消息
+        if websocket.client_state == WebSocketState.CONNECTED:
+            status_msg = f"已连接到 {type_part} 终端"
+            async with active_ptys_lock:
+                if session_id in active_ptys and not active_ptys[session_id].get("command_started", False):
+                    status_msg += " (等待启动命令)"
+            
+            await websocket.send_json({
+                "type": "status", 
+                "message": status_msg
+            })        # 处理 WebSocket 消息
         while True:
-            if not (pty_process and pty_process.isalive()):
-                logger.warning(f"会话 {session_id} 的 PTY 进程不存活。")
-                if websocket.client_state == WebSocketState.CONNECTED:
-                    await websocket.send_json(
-                        {"type": "status", "message": "PTY 进程已终止。"}
-                    )
-                break
-
-            message_str = await websocket.receive_text()
-
             try:
-                msg_data = json.loads(message_str)
-                msg_type = msg_data.get("type")
-                if msg_type == "input":
-                    pty_input_data = msg_data.get("data")
-                    if isinstance(pty_input_data, str):
-                        try:
-                            pty_process.write(pty_input_data)
-                        except Exception as e_write:
-                            logger.error(
-                                f"向会话 {session_id} 的 PTY 写入时出错: {e_write}"
-                            )
-                            if not pty_process.isalive():
-                                if websocket.client_state == WebSocketState.CONNECTED:
-                                    await websocket.send_json(
-                                        {
-                                            "type": "status",
-                                            "message": "PTY 进程在写入错误后终止。",
-                                        }
-                                    )
-                                break
-                elif msg_type == "resize":
-                    cols = msg_data.get("cols", PTY_COLS_DEFAULT)
-                    rows = msg_data.get("rows", PTY_ROWS_DEFAULT)
-                    try:
-                        pty_process.setwinsize(rows, cols)
-                        logger.info(
-                            f"已将会话 {session_id} 的 PTY 大小调整为 {cols}x{rows}"
-                        )
-                    except Exception as e_resize:
-                        logger.error(
-                            f"调整会话 {session_id} 的 PTY 大小时出错: {e_resize}"
-                        )
-                else:
-                    logger.warning(
-                        f"收到来自会话 {session_id} 的未知消息类型 '{msg_type}'"
-                    )
+                message_str = await websocket.receive_text()
 
-            except json.JSONDecodeError:
-                logger.warning(
-                    f"收到来自会话 {session_id} 客户端的非 JSON 消息或格式错误的 JSON: {message_str}"
-                )
-            except Exception as e_msg_proc:
-                logger.error(f"处理会话 {session_id} 的消息时出错: {e_msg_proc}")
-                if pty_process and not pty_process.isalive():
-                    logger.warning(
-                        f"会话 {session_id} 的 PTY 进程已死亡。正在中断消息循环。"
-                    )
-                    if websocket.client_state == WebSocketState.CONNECTED:
-                        await websocket.send_json(
-                            {"type": "status", "message": "PTY 进程意外终止。"}
+                try:
+                    msg_data = json.loads(message_str)
+                    msg_type = msg_data.get("type")
+                    if msg_type == "input":
+                        pty_input_data = msg_data.get("data")
+                        if isinstance(pty_input_data, str):
+                            try:
+                                if pty_process and pty_process.isalive():
+                                    pty_process.write(pty_input_data)
+                                else:
+                                    logger.warning(f"PTY 进程已停止，无法发送消息 (会话: {session_id})")
+                                    break
+                            except Exception as e_write:
+                                logger.error(
+                                    f"向会话 {session_id} 的 PTY 写入时出错: {e_write}"
+                                )
+                                if not pty_process.isalive():
+                                    if websocket.client_state == WebSocketState.CONNECTED:
+                                        await websocket.send_json(
+                                            {
+                                                "type": "status",
+                                                "message": "PTY 进程在写入错误后终止。",
+                                            }
+                                        )
+                                    break
+                    elif msg_type == "resize":
+                        cols = msg_data.get("cols", PTY_COLS_DEFAULT)
+                        rows = msg_data.get("rows", PTY_ROWS_DEFAULT)
+                        try:
+                            if pty_process and pty_process.isalive():
+                                pty_process.setwinsize(rows, cols)
+                                logger.info(
+                                    f"已将会话 {session_id} 的 PTY 大小调整为 {cols}x{rows}"
+                                )
+                        except Exception as e_resize:
+                            logger.error(
+                                f"调整会话 {session_id} 的 PTY 大小时出错: {e_resize}"
+                            )
+                    else:
+                        logger.warning(
+                            f"收到来自会话 {session_id} 的未知消息类型 '{msg_type}'"
                         )
-                    break
+
+                except json.JSONDecodeError:
+                    logger.warning(
+                        f"收到来自会话 {session_id} 客户端的非 JSON 消息或格式错误的 JSON: {message_str}"
+                    )
+                except Exception as e_msg_proc:
+                    logger.error(f"处理会话 {session_id} 的消息时出错: {e_msg_proc}")
+                    if pty_process and not pty_process.isalive():
+                        logger.warning(
+                            f"会话 {session_id} 的 PTY 进程已死亡。正在中断消息循环。"
+                        )
+                        if websocket.client_state == WebSocketState.CONNECTED:
+                            await websocket.send_json(
+                                {"type": "status", "message": "PTY 进程意外终止。"}
+                            )
+                        break
+            except WebSocketDisconnect:
+                logger.info(f"客户端断开连接 (会话: {session_id})")
+                break
+            except Exception as e:
+                logger.error(f"处理 WebSocket 消息时出错 (会话: {session_id}): {e}")
+                break
 
     except WebSocketDisconnect:
         logger.info(f"会话 {session_id} 的客户端已断开连接 (WebSocketDisconnect)。")
@@ -353,37 +390,29 @@ async def handle_websocket_connection(
         )
     finally:
         logger.info(f"正在为会话 {session_id} 进行清理...")
+        
+        # 取消输出任务
         if read_task and not read_task.done():
             read_task.cancel()
             try:
-                await read_task
-            except asyncio.CancelledError:
-                logger.info(f"会话 {session_id} 的 PTY 输出任务已成功取消。")
-            except Exception as e_task_cancel:
-                logger.error(
-                    f"等待已取消的会话 {session_id} PTY 输出任务时出错: {e_task_cancel}"
-                )
+                await asyncio.wait_for(read_task, timeout=2.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+            except Exception as e:
+                logger.warning(f"等待会话 {session_id} 输出任务取消时出错: {e}")
 
+        # 更新 active_ptys 中的 WebSocket 连接为 None（但保留 PTY 进程）
         async with active_ptys_lock:
             if session_id in active_ptys:
-                pty_info = active_ptys.pop(session_id)
-                pty_process_to_kill = pty_info.get("pty")
-                if pty_process_to_kill and pty_process_to_kill.isalive():
-                    logger.info(
-                        f"正在终止会话 {session_id} 的 PTY 进程 (PID: {pty_process_to_kill.pid})。"
-                    )
-                    try:
-                        pty_process_to_kill.terminate(force=True)
-                    except Exception as e_term:
-                        logger.error(f"终止会话 {session_id} 的 PTY 时出错: {e_term}")
+                active_ptys[session_id]["ws"] = None
+                active_ptys[session_id]["output_task"] = None
 
+        # 关闭 WebSocket 连接
         if websocket.client_state == WebSocketState.CONNECTED:
             try:
                 await websocket.close()
-            except RuntimeError as e_close:
-                logger.warning(
-                    f"关闭会话 {session_id} 的 WebSocket 时发生运行时错误 (可能已自行关闭): {e_close}"
-                )
+            except Exception as e:
+                logger.warning(f"关闭 WebSocket 连接时出错 (会话: {session_id}): {e}")
 
         logger.info(f"会话 {session_id} 的清理完成。")
 

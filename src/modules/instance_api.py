@@ -115,23 +115,59 @@ SERVICE_TYPE_MAIN = "main"
 async def _start_pty_process(
     session_id: str, instance_short_id: str, type_part: str
 ) -> bool:
+    """
+    启动 PTY 进程 - 如果虚拟终端已存在，则向其发送启动命令；
+    如果不存在，则创建新的 PTY 进程。
+    """
+    # 获取启动命令
+    pty_command_str, pty_cwd, _ = await get_pty_command_and_cwd_from_instance(
+        session_id
+    )
+
+    if not pty_command_str:
+        logger.error(f"无法确定会话 {session_id} 的 PTY 启动命令。")
+        return False
+
     async with active_ptys_lock:
         if (
             session_id in active_ptys
             and active_ptys[session_id].get("pty")
             and active_ptys[session_id]["pty"].isalive()
         ):
-            logger.info(f"会话 {session_id} 的 PTY 进程已在运行。")
-            return True  # 已在运行
+            # 虚拟终端已存在
+            pty_info = active_ptys[session_id]
+            
+            # 检查是否已经启动了命令
+            if pty_info.get("command_started", False):
+                logger.info(f"会话 {session_id} 的命令已在运行。")
+                return True
+            
+            # 向现有的虚拟终端发送启动命令
+            pty_process = pty_info["pty"]
+            
+            try:
+                # 切换到正确的工作目录
+                if pty_cwd and pty_cwd != pty_info.get("working_directory"):
+                    cd_command = f"cd /d \"{pty_cwd}\"\r\n"
+                    pty_process.write(cd_command)
+                    logger.info(f"已切换到工作目录: {pty_cwd}")
+                
+                # 发送启动命令
+                start_command = f"{pty_command_str}\r\n"
+                pty_process.write(start_command)
+                
+                # 标记命令已启动
+                pty_info["command_started"] = True
+                pty_info["working_directory"] = pty_cwd
+                
+                logger.info(f"已向现有虚拟终端发送启动命令 (会话: {session_id}): {pty_command_str}")
+                return True
+                
+            except Exception as e:
+                logger.error(f"向会话 {session_id} 的虚拟终端发送命令失败: {e}")
+                return False
 
-    pty_command_str, pty_cwd, _ = await get_pty_command_and_cwd_from_instance(
-        session_id
-    )
-
-    if not pty_command_str:
-        logger.error(f"无法确定会话 {session_id} 的 PTY 命令。")
-        return False
-
+    # 如果虚拟终端不存在，创建新的 PTY 进程（直接执行命令）
     try:
         # 为 PtyProcess.spawn 准备命令
         try:
@@ -158,6 +194,8 @@ async def _start_pty_process(
                 "output_task": None,  # 输出任务将由 websocket_manager 启动
                 "instance_part": instance_short_id,
                 "type_part": type_part,
+                "command_started": True,  # 直接启动的命令标记为已启动
+                "working_directory": pty_cwd,
             }
         return True
     except Exception as e:
