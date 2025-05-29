@@ -14,7 +14,7 @@ def get_resource_path(relative_path):
     try:
         # PyInstaller打包环境：获取exe文件所在目录
         # 使用sys.executable获取exe文件路径，而不是临时目录
-        if hasattr(sys, '_MEIPASS'):
+        if hasattr(sys, "_MEIPASS"):
             # 在PyInstaller环境中，数据文件应该放在exe同级目录
             base_path = os.path.dirname(sys.executable)
         else:
@@ -23,7 +23,7 @@ def get_resource_path(relative_path):
     except AttributeError:
         # 开发环境中的路径
         base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-    
+
     return os.path.join(base_path, relative_path)
 
 
@@ -129,7 +129,7 @@ def get_module_logger(
         and "custom_style" not in record["extra"],
         enqueue=True,
     )
-    handler_ids.append(console_id)    # 文件处理器
+    handler_ids.append(console_id)  # 文件处理器
     log_dir = Path(get_resource_path("logs"))
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / "{time:YYYY-MM-DD}.log"
