@@ -134,23 +134,22 @@ async def main():
     try:
         # 创建服务器任务
         server_task = asyncio.create_task(server.serve())
-        
+
         # 创建关闭监听任务
         shutdown_task = asyncio.create_task(shutdown_event.wait())
-        
+
         # 等待服务器启动或关闭信号
         done, pending = await asyncio.wait(
-            [server_task, shutdown_task],
-            return_when=asyncio.FIRST_COMPLETED
+            [server_task, shutdown_task], return_when=asyncio.FIRST_COMPLETED
         )
-        
+
         # 如果收到关闭信号
         if shutdown_task in done:
             logger.info("收到关闭信号，开始优雅关闭...")
-            
+
             # 关闭所有 WebSocket 连接
             await shutdown_all_websocket_connections()
-            
+
             # 停止服务器
             server.should_exit = True
             if not server_task.done():
@@ -159,7 +158,7 @@ async def main():
                     await server_task
                 except asyncio.CancelledError:
                     pass
-        
+
         # 取消剩余的任务
         for task in pending:
             task.cancel()
@@ -167,7 +166,7 @@ async def main():
                 await task
             except asyncio.CancelledError:
                 pass
-                
+
     except KeyboardInterrupt:
         logger.info("收到键盘中断，开始优雅关闭...")
         # 关闭所有 WebSocket 连接

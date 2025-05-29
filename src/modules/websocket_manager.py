@@ -576,30 +576,30 @@ async def shutdown_all_websocket_connections():
     在服务器关闭时调用，确保所有连接和进程都被正确清理。
     """
     logger.info("开始关闭所有 WebSocket 连接和 PTY 进程...")
-    
+
     sessions_to_close = []
-    
+
     # 获取所有活跃的会话
     async with active_ptys_lock:
         sessions_to_close = list(active_ptys.keys())
-    
+
     if not sessions_to_close:
         logger.info("没有活跃的 WebSocket 连接需要关闭。")
         return
-    
+
     logger.info(f"找到 {len(sessions_to_close)} 个活跃的 WebSocket 连接，正在关闭...")
-    
+
     # 并发关闭所有连接
     close_tasks = []
     for session_id in sessions_to_close:
         task = asyncio.create_task(_close_single_session(session_id))
         close_tasks.append(task)
-    
+
     # 等待所有关闭任务完成，设置超时
     try:
         await asyncio.wait_for(
             asyncio.gather(*close_tasks, return_exceptions=True),
-            timeout=10.0  # 10秒超时
+            timeout=10.0,  # 10秒超时
         )
         logger.info("所有 WebSocket 连接已成功关闭。")
     except asyncio.TimeoutError:
@@ -614,16 +614,16 @@ async def _close_single_session(session_id: str):
     """
     try:
         logger.debug(f"正在关闭会话: {session_id}")
-        
+
         pty_info = None
         async with active_ptys_lock:
             if session_id in active_ptys:
                 pty_info = active_ptys.pop(session_id)
-        
+
         if not pty_info:
             logger.debug(f"会话 {session_id} 已被移除或不存在。")
             return
-        
+
         # 1. 取消输出任务
         read_task = pty_info.get("output_task")
         if read_task and not read_task.done():
@@ -634,7 +634,7 @@ async def _close_single_session(session_id: str):
                 pass
             except Exception as e:
                 logger.warning(f"取消会话 {session_id} 的输出任务时出错: {e}")
-        
+
         # 2. 终止 PTY 进程
         pty_process = pty_info.get("pty")
         if pty_process and pty_process.isalive():
@@ -643,22 +643,21 @@ async def _close_single_session(session_id: str):
                 logger.debug(f"PTY 进程已终止 (会话: {session_id})")
             except Exception as e:
                 logger.warning(f"终止会话 {session_id} 的 PTY 进程时出错: {e}")
-        
+
         # 3. 关闭 WebSocket 连接
         websocket = pty_info.get("ws")
         if websocket and websocket.client_state == WebSocketState.CONNECTED:
             try:
-                await websocket.send_json({
-                    "type": "status", 
-                    "message": "服务器正在关闭，连接即将断开。"
-                })
+                await websocket.send_json(
+                    {"type": "status", "message": "服务器正在关闭，连接即将断开。"}
+                )
                 await websocket.close(code=1001)  # Going Away
                 logger.debug(f"WebSocket 连接已关闭 (会话: {session_id})")
             except Exception as e:
                 logger.warning(f"关闭会话 {session_id} 的 WebSocket 时出错: {e}")
-        
+
         logger.debug(f"会话 {session_id} 已成功关闭。")
-        
+
     except Exception as e:
         logger.error(f"关闭会话 {session_id} 时发生意外错误: {e}")
 
