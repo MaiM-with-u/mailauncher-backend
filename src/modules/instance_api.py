@@ -450,7 +450,7 @@ async def stop_instance(instance_id: str):
         )
 
 
-@router.post("/add", response_model=DeployResponse)
+@router.post("/instances/add", response_model=DeployResponse)
 async def add_existing_instance(payload: DeployRequest):
     """
     添加硬盘中已有的麦麦实例到系统中。

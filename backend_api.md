@@ -216,18 +216,19 @@
     {
       "name": "napcat",
       "path": "D:\\MaiBot\\MaiBot-1\\napcat",
-      "port": 8095
+      "port": 8095,
+      "run_cmd": "python main.py"
     },
     {
       "name": "nonebot-ada",
       "path": "D:\\MaiBot\\MaiBot-1\\nonebot-ada",
-      "port": 18002
+      "port": 18002,
+      "run_cmd": "python bot.py"
     }
   ],
   "install_path": "D:\\MaiBot\\MaiBot-1",
   "port": 8000,
-  "version": "latest",
-  "qq_number": "123456789",
+  "version": "latest"
 }
 ```
 
@@ -269,6 +270,66 @@
       "message": "正在安装 NoneBot-ada"
     }
   ],
+}
+```
+
+### 添加现有实例
+
+- **路径**: `/api/v1/instances/add`
+- **方法**: `POST`
+- **描述**: 添加硬盘中已有的麦麦实例到系统中。该API不会进行实际的部署，而是验证指定路径中是否存在麦麦实例，然后将其添加到数据库中进行管理。
+- **请求体**:
+
+```json
+{
+  "instance_name": "maibot-existing-1",
+  "install_services":[
+    {
+      "name": "napcat",
+      "path": "D:\\MaiBot\\MaiBot-existing\\napcat",
+      "port": 8095,
+      "run_cmd": "python main.py"
+    },
+    {
+      "name": "nonebot-ada",
+      "path": "D:\\MaiBot\\MaiBot-existing\\nonebot-ada",
+      "port": 18002,
+      "run_cmd": "python bot.py"
+    }
+  ],
+  "install_path": "D:\\MaiBot\\MaiBot-existing",
+  "port": 8000,
+  "version": "0.6.3"
+}
+```
+
+- **响应**:
+
+```json
+{
+  "success": true,
+  "message": "现有实例 maibot-existing-1 已成功添加到系统中。",
+  "instance_id": "b3fe529b51999fc2d45df5196c6c50a46a608fb2"
+}
+```
+
+- **错误响应**:
+
+```json
+{
+  "detail": "指定的安装路径不存在: D:\\MaiBot\\MaiBot-nonexistent"
+}
+```
+
+```json
+{
+  "detail": "服务 napcat 的路径不存在: D:\\MaiBot\\MaiBot-existing\\napcat"
+}
+```
+
+```json
+{
+  "detail": "实例 'maibot-existing-1' (ID: b3fe529b51999fc2d45df5196c6c50a46a608fb2) 已存在。"
 }
 ```
 
