@@ -14,6 +14,9 @@ from sqlmodel import Session, select  # SQLModel Session - 添加 select
 import asyncio
 import shlex
 from winpty import PtyProcess  # type: ignore
+from pathlib import Path
+from sqlalchemy.exc import IntegrityError
+from src.utils.generate_instance_id import generate_instance_id
 
 from src.modules.websocket_manager import (
     active_ptys,
@@ -33,6 +36,7 @@ class ServiceInstallConfig(BaseModel):
     name: str = Field(..., description="服务名称")
     path: str = Field(..., description="服务安装路径")
     port: int = Field(..., description="服务端口")
+    run_cmd: str = Field(..., description="服务运行命令")
 
 
 class DeployRequest(BaseModel):
@@ -444,3 +448,121 @@ async def stop_instance(instance_id: str):
             success=False,  # 主要操作（状态更新）失败
             message=f"实例 {instance.name} 组件已尝试停止，但状态更新失败。",
         )
+
+
+@router.post("/add", response_model=DeployResponse)
+async def add_existing_instance(payload: DeployRequest):
+    """
+    添加硬盘中已有的麦麦实例到系统中。
+    
+    该API不会进行实际的部署，而是验证指定路径中是否存在麦麦实例，
+    然后将其添加到数据库中进行管理。
+    """
+    logger.info(
+        f"收到添加现有实例请求，实例名称: {payload.instance_name}, 路径: {payload.install_path}"
+    )
+    
+    # 验证主安装路径是否存在
+    install_path = Path(payload.install_path)
+    if not install_path.exists():
+        logger.error(f"指定的安装路径不存在: {payload.install_path}")
+        raise HTTPException(
+            status_code=400, 
+            detail=f"指定的安装路径不存在: {payload.install_path}"
+        )
+    
+    if not install_path.is_dir():
+        logger.error(f"指定的安装路径不是目录: {payload.install_path}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"指定的安装路径不是目录: {payload.install_path}"
+        )
+    
+    # 验证各个服务路径是否存在
+    for service_config in payload.install_services:
+        service_path = Path(service_config.path)
+        if not service_path.exists():
+            logger.error(f"服务 {service_config.name} 的路径不存在: {service_config.path}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"服务 {service_config.name} 的路径不存在: {service_config.path}"
+            )
+        
+        if not service_path.is_dir():
+            logger.error(f"服务 {service_config.name} 的路径不是目录: {service_config.path}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"服务 {service_config.name} 的路径不是目录: {service_config.path}"
+            )
+    
+    # 生成实例ID
+    instance_id_str = generate_instance_id(payload.instance_name)
+    logger.info(f"为实例 {payload.instance_name} 生成的 ID: {instance_id_str}")
+    
+    # 创建数据库记录
+    with Session(engine) as session:
+        # 检查实例是否已存在
+        existing_instance_check = session.exec(
+            select(Instances).where(Instances.instance_id == instance_id_str)
+        ).first()
+        if existing_instance_check:
+            logger.warning(
+                f"实例ID {instance_id_str} ({payload.instance_name}) 已存在。"
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=f"实例 '{payload.instance_name}' (ID: {instance_id_str}) 已存在。",
+            )
+        
+        try:
+            # 创建实例记录
+            new_instance_obj = instance_manager.create_instance(
+                name=payload.instance_name,
+                version=payload.version,
+                path=payload.install_path,
+                status=InstanceStatus.STOPPED,  # 新添加的实例默认为停止状态
+                port=payload.port,
+                instance_id=instance_id_str,
+                db_session=session,
+            )
+            
+            if not new_instance_obj:
+                logger.error(
+                    f"通过 InstanceManager 创建实例 {payload.instance_name} (ID: {instance_id_str}) 失败。"
+                )
+                raise HTTPException(
+                    status_code=500, detail="实例信息保存失败，请查看日志了解详情。"
+                )
+              # 创建服务记录
+            for service_config in payload.install_services:
+                db_service = Services(
+                    instance_id=instance_id_str,
+                    name=service_config.name,
+                    path=service_config.path,
+                    status="stopped",  # 新添加的服务默认为停止状态
+                    port=service_config.port,
+                    run_cmd=service_config.run_cmd,  # 使用payload中的run_cmd字段
+                )
+                session.add(db_service)
+            
+            session.commit()
+            logger.info(
+                f"现有实例 {payload.instance_name} (ID: {instance_id_str}) 及关联服务已成功添加到数据库。"
+            )
+            
+        except IntegrityError as e:
+            session.rollback()
+            logger.error(
+                f"添加现有实例 {payload.instance_name} 时发生数据库完整性错误: {e}"
+            )
+            raise HTTPException(status_code=409, detail=f"保存实例信息时发生冲突: {e}")
+        except Exception as e:
+            session.rollback()
+            logger.error(f"添加现有实例 {payload.instance_name} 期间发生意外错误: {e}")
+            raise HTTPException(status_code=500, detail=f"处理添加实例时发生内部错误: {e}")
+    
+    return DeployResponse(
+        success=True,
+        message=f"现有实例 {payload.instance_name} 已成功添加到系统中。",
+        instance_id=instance_id_str,
+    )
