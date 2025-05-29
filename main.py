@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Response, WebSocket
 from src.utils.logger import get_module_logger
+import signal
+import sys
 
 # import sys
 from src.utils.config import global_config
@@ -13,7 +15,8 @@ from src.modules import system  # 添加导入
 from src.modules import deploy_api  # 添加 deploy_api 导入
 from src.modules.websocket_manager import (
     handle_websocket_connection,
-)  # Import the new handler
+    shutdown_all_websocket_connections,
+)  # Import the new handler and shutdown function
 import asyncio  # 添加 asyncio 导入
 
 logger = get_module_logger("主程序")
@@ -84,11 +87,29 @@ global_server.register_router(
 )  # 注册 deploy_api router，并添加 /deploy 前缀
 logger.info(f"已包含 API 路由，前缀为：{API_PREFIX}")
 
+# --- 全局变量用于优雅关闭 ---
+shutdown_event = asyncio.Event()
+
+
+def signal_handler(signum, frame):
+    """处理终止信号"""
+    logger.info(f"收到信号 {signum}，开始优雅关闭...")
+    shutdown_event.set()
+
 
 # --- 服务器启动 ---
 async def main():
     logger.info("正在启动MaiLauncher后端服务器...")
     logger.info(f"HTTP 和 WebSocket 服务器将在 http://{HTTP_HOST}:{HTTP_PORT} 上启动")
+
+    # 设置信号处理器
+    if sys.platform != "win32":
+        # Unix 系统使用信号处理
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+    else:
+        # Windows 系统的信号处理
+        signal.signal(signal.SIGINT, signal_handler)
 
     # 初始化数据库
     logger.info("正在初始化数据库...")
@@ -111,10 +132,50 @@ async def main():
     logger.info("Uvicorn 服务器 (HTTP 和 WebSocket) 正在启动...")
 
     try:
-        # 仅运行 Uvicorn 服务器，它将处理所有请求
-        await server.serve()
+        # 创建服务器任务
+        server_task = asyncio.create_task(server.serve())
+        
+        # 创建关闭监听任务
+        shutdown_task = asyncio.create_task(shutdown_event.wait())
+        
+        # 等待服务器启动或关闭信号
+        done, pending = await asyncio.wait(
+            [server_task, shutdown_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+        
+        # 如果收到关闭信号
+        if shutdown_task in done:
+            logger.info("收到关闭信号，开始优雅关闭...")
+            
+            # 关闭所有 WebSocket 连接
+            await shutdown_all_websocket_connections()
+            
+            # 停止服务器
+            server.should_exit = True
+            if not server_task.done():
+                server_task.cancel()
+                try:
+                    await server_task
+                except asyncio.CancelledError:
+                    pass
+        
+        # 取消剩余的任务
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+                
     except KeyboardInterrupt:
-        logger.info("服务器正在关闭...")
+        logger.info("收到键盘中断，开始优雅关闭...")
+        # 关闭所有 WebSocket 连接
+        await shutdown_all_websocket_connections()
+    except Exception as e:
+        logger.error(f"服务器运行时发生错误: {e}", exc_info=True)
+        # 关闭所有 WebSocket 连接
+        await shutdown_all_websocket_connections()
     finally:
         logger.info("服务器已关闭。")
 
@@ -123,6 +184,10 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())  # 使用 asyncio.run 运行主异步函数
     except KeyboardInterrupt:
-        logger.info("主程序被中断。")
+        logger.info("主程序被键盘中断。")
+    except SystemExit:
+        logger.info("主程序正常退出。")
     except Exception as e:
         logger.error(f"主程序启动时发生未处理的异常: {e}", exc_info=True)
+    finally:
+        logger.info("MaiLauncher 后端服务已完全关闭。")
