@@ -72,6 +72,7 @@ async def root_dashboard():
 async def test_endpoint():
     return {"status": "success", "message": "后端运行正常", "port": HTTP_PORT}
 
+
 # 添加简单的WebSocket测试端点
 @global_server.app.websocket("/ws")
 async def simple_websocket_endpoint(websocket: WebSocket):
@@ -88,6 +89,7 @@ async def simple_websocket_endpoint(websocket: WebSocket):
         logger.error(f"WebSocket错误: {e}")
     finally:
         await websocket.close()
+
 
 # 添加 WebSocket 路由
 # 注意：路径中的 {session_id} 将被传递给 handle_websocket_connection
