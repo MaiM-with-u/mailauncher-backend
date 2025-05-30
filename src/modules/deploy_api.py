@@ -696,19 +696,19 @@ def generate_venv_command(base_command: str, working_directory: str) -> str:
     # 检查虚拟环境是否存在
     if not venv_path.exists():
         logger.warning(f"虚拟环境不存在于 {venv_path}，将使用原始命令")
-        return base_command
-
-    # 根据操作系统生成不同的激活命令
+        return base_command    # 根据操作系统生成不同的激活命令
     if os.name == "nt":  # Windows
         # 检查虚拟环境的Python可执行文件是否存在
         venv_python = venv_path / "Scripts" / "python.exe"
         if venv_python.exists():
             # 直接使用虚拟环境中的Python可执行文件
             # 替换命令中的 "python" 为虚拟环境中的python路径
+            # 对路径加引号以处理空格和特殊字符
+            quoted_python_path = f'"{str(venv_python)}"'
             if base_command.startswith("python "):
-                venv_command = str(venv_python) + base_command[6:]  # 去掉 "python"
+                venv_command = quoted_python_path + base_command[6:]  # 去掉 "python"
             elif base_command == "python":
-                venv_command = str(venv_python)
+                venv_command = quoted_python_path
             else:
                 # 如果命令不是以python开头，使用激活脚本的方式
                 activate_script = venv_path / "Scripts" / "activate.bat"
@@ -717,16 +717,17 @@ def generate_venv_command(base_command: str, working_directory: str) -> str:
             logger.warning(
                 f"虚拟环境Python可执行文件不存在于 {venv_python}，将使用原始命令"
             )
-            return base_command
-    else:  # Linux/Unix
+            return base_command    
         # 检查虚拟环境的Python可执行文件是否存在
         venv_python = venv_path / "bin" / "python"
         if venv_python.exists():
             # 直接使用虚拟环境中的Python可执行文件
+            # 对路径加引号以处理空格和特殊字符
+            quoted_python_path = f'"{str(venv_python)}"'
             if base_command.startswith("python "):
-                venv_command = str(venv_python) + base_command[6:]  # 去掉 "python"
+                venv_command = quoted_python_path + base_command[6:]  # 去掉 "python"
             elif base_command == "python":
-                venv_command = str(venv_python)
+                venv_command = quoted_python_path
             else:
                 # 如果命令不是以python开头，使用激活脚本的方式
                 activate_script = venv_path / "bin" / "activate"
