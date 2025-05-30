@@ -272,8 +272,7 @@ async def get_available_versions() -> AvailableVersionsResponse:
         async with httpx.AsyncClient() as client:
             response: httpx.Response = await client.get(url)
             response.raise_for_status()
-            tags_data: List[Dict[str, Any]] = response.json()
-
+            tags_data: List[Dict[str, Any]] = response.json()            
             versions: List[str] = [
                 tag["name"]
                 for tag in tags_data
@@ -285,6 +284,8 @@ async def get_available_versions() -> AvailableVersionsResponse:
             # 不再强制添加 "latest"
             if "main" not in versions:  # 仍然保留 main
                 versions.insert(0, "main")  # 将 main 放在列表开头
+            # 在版本列表最后添加 dev
+            versions.append("dev")
             logger.info(f"从 {source_name} 获取并过滤后的版本列表: {versions}")
             return versions
 
