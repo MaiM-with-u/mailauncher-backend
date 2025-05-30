@@ -111,6 +111,16 @@ jobs:
     - name: Display structure of downloaded files
       run: ls -la ./artifacts/
       
+    - name: Rename artifacts for release
+      run: |
+        mkdir -p ./release-files
+        # Copy and rename Windows executable
+        cp ./artifacts/MaiLauncher-Backend-Windows-${{ github.sha }}/MaiLauncher-Backend.exe ./release-files/MaiLauncher-Backend-Windows.exe
+        # Copy and rename Linux executable
+        cp ./artifacts/MaiLauncher-Backend-Linux-${{ github.sha }}/MaiLauncher-Backend ./release-files/MaiLauncher-Backend-Linux
+        # Copy and rename macOS executable
+        cp ./artifacts/MaiLauncher-Backend-macOS-${{ github.sha }}/MaiLauncher-Backend ./release-files/MaiLauncher-Backend-macOS
+        
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
@@ -119,17 +129,23 @@ jobs:
         body: |
           Automated cross-platform build from commit ${{ github.sha }}
           
-          Platforms included:
-          - Windows (x64) - MaiLauncher-Backend.exe
-          - Linux (x64) - MaiLauncher-Backend
-          - macOS (x64) - MaiLauncher-Backend
+          **Platforms included:**
+          - 🪟 Windows (x64) - `MaiLauncher-Backend-Windows.exe`
+          - 🐧 Linux (x64) - `MaiLauncher-Backend-Linux`
+          - 🍎 macOS (x64) - `MaiLauncher-Backend-macOS`
           
-          Changes in this build:
+          **Changes in this build:**
           ${{ github.event.head_commit.message }}
+          
+          **Download Instructions:**
+          1. Choose the appropriate file for your operating system
+          2. Download and save to your desired location
+          3. For Linux/macOS: Make executable with `chmod +x filename`
+          4. Run the executable to start MaiLauncher Backend
         files: |
-          ./artifacts/MaiLauncher-Backend-Windows-${{ github.sha }}/MaiLauncher-Backend.exe
-          ./artifacts/MaiLauncher-Backend-Linux-${{ github.sha }}/MaiLauncher-Backend
-          ./artifacts/MaiLauncher-Backend-macOS-${{ github.sha }}/MaiLauncher-Backend
+          ./release-files/MaiLauncher-Backend-Windows.exe
+          ./release-files/MaiLauncher-Backend-Linux
+          ./release-files/MaiLauncher-Backend-macOS
         draft: false
         prerelease: true
       env:
