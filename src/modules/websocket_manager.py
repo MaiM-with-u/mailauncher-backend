@@ -56,17 +56,18 @@ async def get_pty_command_and_cwd_from_instance(
             f"为 'main' 类型 (实例 '{instance_short_id}') 配置 PTY: 基础命令='{base_command}', 虚拟环境命令='{pty_command}', CWD='{pty_cwd}'"
         )
     else:  # Adapter/Service PTY configuration (type_part is the service name)
-        logger.info(f"为服务 '{type_part}' (实例 '{instance_short_id}') 配置 PTY。")
-
-        # 1. 获取实例的已安装服务列表
-        installed_service_names = instance_manager.get_instance_services(
+        logger.info(f"为服务 '{type_part}' (实例 '{instance_short_id}') 配置 PTY。")        # 1. 获取实例的已安装服务列表
+        installed_services = instance_manager.get_instance_services(
             instance_short_id
         )
-        if not isinstance(installed_service_names, list):
+        if not isinstance(installed_services, list):
             logger.error(
                 f"获取实例 '{instance_short_id}' 的服务列表失败或返回格式不正确。无法验证服务 '{type_part}'"
             )
             return None, None, status_value
+
+        # 提取服务名称列表
+        installed_service_names = [service.get("name") for service in installed_services if service.get("name")]
 
         # 2. 检查请求的服务是否在已安装列表中
         if type_part not in installed_service_names:

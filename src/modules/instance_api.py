@@ -376,11 +376,15 @@ async def start_instance(instance_id: str):
 
     # 3. 获取已安装的服务
     installed_services = instance_manager.get_instance_services(instance_id)
-    logger.info(f"实例 {instance_id} 检测到已安装的服务: {installed_services}")
-
-    # 4. 启动已安装服务的 PTY
+    logger.info(f"实例 {instance_id} 检测到已安装的服务: {installed_services}")    # 4. 启动已安装服务的 PTY
     if installed_services:
-        for service_name in installed_services:
+        for service_detail in installed_services:
+            # 从服务详情字典中提取服务名称
+            service_name = service_detail.get("name")
+            if not service_name:
+                logger.warning(f"跳过无效的服务详情（缺少name字段）: {service_detail}")
+                continue
+                
             # 确保不会重复启动主应用（如果它也被列为服务的话）
             if service_name == SERVICE_TYPE_MAIN:
                 continue
@@ -436,15 +440,15 @@ async def stop_instance(instance_id: str):
     instance_manager.update_instance_status(instance_id, InstanceStatus.STOPPING)
     logger.info(f"实例 {instance_id} 状态已更新为“停止中”。")
 
-    all_processes_stopped_successfully = True
-
-    # 2. 获取需要停止的 PTY 列表（主应用 + 服务）
+    all_processes_stopped_successfully = True    # 2. 获取需要停止的 PTY 列表（主应用 + 服务）
     pty_types_to_stop = [SERVICE_TYPE_MAIN]
     # 从数据库获取服务列表，而不是依赖 SERVICE_TYPES_ALL
     installed_services = instance_manager.get_instance_services(instance_id)
     if installed_services:
-        for service_name in installed_services:
-            if service_name not in pty_types_to_stop:  # 避免重复
+        for service_detail in installed_services:
+            # 从服务详情字典中提取服务名称
+            service_name = service_detail.get("name")
+            if service_name and service_name not in pty_types_to_stop:  # 避免重复
                 pty_types_to_stop.append(service_name)
 
     logger.info(f"实例 {instance_id} 将尝试停止以下 PTY 类型: {pty_types_to_stop}")
