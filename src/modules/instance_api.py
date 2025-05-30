@@ -13,6 +13,7 @@ from src.utils.database import engine  # SQLModel 引擎
 from sqlmodel import Session, select  # SQLModel Session - 添加 select
 import asyncio
 import shlex
+import shutil
 from winpty import PtyProcess  # type: ignore
 from pathlib import Path
 from sqlalchemy.exc import IntegrityError
@@ -616,6 +617,12 @@ async def add_existing_instance(payload: DeployRequest):
 async def delete_instance(instance_id: str):
     """
     删除指定的实例及其关联的所有服务。
+    
+    此函数将：
+    1. 停止运行中的实例
+    2. 清理所有相关的 PTY 进程
+    3. 删除数据库中的实例和服务记录
+    4. 删除实例和所有服务对应的文件夹
     """
     logger.info(f"收到删除实例 {instance_id} 的请求")
 
@@ -631,44 +638,88 @@ async def delete_instance(instance_id: str):
         # 可以选择强制停止或者要求用户先停止
         # 这里我们先停止实例
         await stop_instance(instance_id)
-        logger.info(f"实例 {instance_id} 已自动停止")
-
-    # 3. 停止并清理所有相关的 PTY 进程
+        logger.info(f"实例 {instance_id} 已自动停止")    # 3. 停止并清理所有相关的 PTY 进程
     logger.info(f"正在清理实例 {instance_id} 的所有 PTY 进程...")
     await stop_all_ptys_for_instance(instance_id)
 
+    # 4. 收集需要删除的文件夹路径
+    folders_to_delete = []
+    services_to_delete = []
+    
     try:
         with Session(engine) as session:
-            # 4. 删除相关的服务记录
+            # 获取所有相关的服务记录，收集路径信息
             services_to_delete = session.exec(
                 select(Services).where(Services.instance_id == instance_id)
             ).all()
 
+            # 收集服务文件夹路径
             for service in services_to_delete:
-                session.delete(service)
-                logger.info(f"标记删除服务: {service.name} (实例ID: {instance_id})")
+                if service.path and Path(service.path).exists():
+                    folders_to_delete.append(service.path)
+                    logger.info(f"将删除服务文件夹: {service.path} (服务: {service.name})")
 
-            # 5. 删除实例记录
+            # 获取实例记录，收集实例路径
             instance_to_delete = session.exec(
                 select(Instances).where(Instances.instance_id == instance_id)
             ).first()
 
+            if instance_to_delete and instance_to_delete.path:
+                instance_path = Path(instance_to_delete.path)
+                if instance_path.exists():
+                    folders_to_delete.append(instance_to_delete.path)
+                    logger.info(f"将删除实例文件夹: {instance_to_delete.path}")
+
+            # 5. 删除数据库记录
+            for service in services_to_delete:
+                session.delete(service)
+                logger.info(f"标记删除服务记录: {service.name} (实例ID: {instance_id})")
+
             if instance_to_delete:
                 session.delete(instance_to_delete)
                 logger.info(
-                    f"标记删除实例: {instance_to_delete.name} (ID: {instance_id})"
+                    f"标记删除实例记录: {instance_to_delete.name} (ID: {instance_id})"
                 )
 
-            # 6. 提交事务
+            # 6. 提交数据库事务
             session.commit()
+            logger.info(f"实例 {instance_id} ({instance.name}) 的数据库记录已删除")
 
-            logger.info(
-                f"实例 {instance_id} ({instance.name}) 及其 {len(services_to_delete)} 个关联服务已成功从数据库中删除"
-            )
+        # 7. 删除文件夹（在数据库事务成功后进行）
+        deleted_folders = []
+        failed_folders = []
+        
+        for folder_path in folders_to_delete:
+            try:
+                folder_path_obj = Path(folder_path)
+                if folder_path_obj.exists() and folder_path_obj.is_dir():
+                    shutil.rmtree(folder_path, ignore_errors=False)
+                    deleted_folders.append(folder_path)
+                    logger.info(f"成功删除文件夹: {folder_path}")
+                elif folder_path_obj.exists():
+                    logger.warning(f"路径存在但不是文件夹，跳过删除: {folder_path}")
+                else:
+                    logger.info(f"文件夹不存在，无需删除: {folder_path}")
+            except Exception as folder_err:
+                failed_folders.append(folder_path)
+                logger.error(f"删除文件夹 {folder_path} 失败: {folder_err}")
 
-            return ActionResponse(
-                success=True, message=f"实例 {instance.name} 及其关联服务已成功删除。"
-            )
+        # 8. 构建返回消息
+        success_msg = f"实例 {instance.name} 已成功删除"
+        if deleted_folders:
+            success_msg += f"，已删除 {len(deleted_folders)} 个文件夹"
+        if failed_folders:
+            success_msg += f"，但 {len(failed_folders)} 个文件夹删除失败: {', '.join(failed_folders)}"
+
+        logger.info(
+            f"实例 {instance_id} ({instance.name}) 删除完成: 数据库记录已删除，"
+            f"成功删除 {len(deleted_folders)} 个文件夹，{len(failed_folders)} 个文件夹删除失败"
+        )
+
+        return ActionResponse(
+            success=True,
+            message=success_msg
+        )
 
     except Exception as e:
         logger.error(f"删除实例 {instance_id} 时发生错误: {e}", exc_info=True)

@@ -5,12 +5,111 @@ from pathlib import Path
 from src.utils.logger import get_module_logger
 import stat  # For file permissions
 import sys  # 添加sys导入，用于虚拟环境创建
+import re  # 添加正则表达式支持，用于配置文件修改
 # import errno # For error codes
 
 # Import List for type hinting
 from typing import List, Dict, Any
 
 logger = get_module_logger("版本部署工具")
+
+
+def modify_env_file(env_file_path: Path, instance_port: str, instance_id: str) -> bool:
+    """
+    修改 .env 文件中的端口配置。
+
+    Args:
+        env_file_path: .env 文件路径
+        instance_port: 实例端口
+        instance_id: 实例ID
+
+    Returns:
+        bool: 修改成功返回True，失败返回False
+    """
+    logger.info(f"开始修改 .env 文件端口配置 (实例ID: {instance_id})")
+    
+    try:
+        if not env_file_path.exists():
+            logger.error(f".env 文件不存在: {env_file_path} (实例ID: {instance_id})")
+            return False
+        
+        # 读取原文件内容
+        with open(env_file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # 使用正则表达式替换 PORT 配置
+        pattern = r'PORT\s*=\s*\d+'
+        replacement = f'PORT={instance_port}'
+        
+        if re.search(pattern, content):
+            new_content = re.sub(pattern, replacement, content)
+            
+            # 写回文件
+            with open(env_file_path, 'w', encoding='utf-8') as f:
+                f.write(new_content)
+            
+            logger.info(f"成功修改 .env 文件端口为 {instance_port} (实例ID: {instance_id})")
+            return True
+        else:
+            logger.warning(f".env 文件中未找到 PORT 配置 (实例ID: {instance_id})")
+            return False
+            
+    except Exception as e:
+        logger.error(f"修改 .env 文件失败 (实例ID: {instance_id}): {e}")
+        return False
+
+
+def modify_napcat_config_file(
+    config_file_path: Path, 
+    napcat_port: str, 
+    maibot_port: str, 
+    instance_id: str
+) -> bool:
+    """
+    修改 napcat-ada 服务的 config.toml 文件。
+
+    Args:
+        config_file_path: config.toml 文件路径
+        napcat_port: Napcat 服务端口
+        maibot_port: MaiBot 主实例端口
+        instance_id: 实例ID
+
+    Returns:
+        bool: 修改成功返回True，失败返回False
+    """
+    logger.info(f"开始修改 napcat-ada config.toml 文件 (实例ID: {instance_id})")
+    
+    try:
+        if not config_file_path.exists():
+            logger.error(f"config.toml 文件不存在: {config_file_path} (实例ID: {instance_id})")
+            return False
+        
+        # 读取原文件内容
+        with open(config_file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # 替换 Napcat_Server 的 port
+        napcat_pattern = r'(\[Napcat_Server\].*?port\s*=\s*)\d+'
+        napcat_replacement = rf'\g<1>{napcat_port}'
+        content = re.sub(napcat_pattern, napcat_replacement, content, flags=re.DOTALL)
+        
+        # 替换 MaiBot_Server 的 port
+        maibot_pattern = r'(\[MaiBot_Server\].*?port\s*=\s*)\d+'
+        maibot_replacement = rf'\g<1>{maibot_port}'
+        content = re.sub(maibot_pattern, maibot_replacement, content, flags=re.DOTALL)
+        
+        # 写回文件
+        with open(config_file_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        logger.info(
+            f"成功修改 napcat-ada config.toml 文件: Napcat端口={napcat_port}, MaiBot端口={maibot_port} (实例ID: {instance_id})"
+        )
+        return True
+        
+    except Exception as e:
+        logger.error(f"修改 napcat-ada config.toml 文件失败 (实例ID: {instance_id}): {e}")
+        return False
 
 
 def setup_service_virtual_environment(
@@ -165,7 +264,7 @@ class DeployManager:
     def __init__(self):
         self.primary_repo_url = "https://github.com/MaiM-with-u/MaiBot"
         self.secondary_repo_url = "https://gitee.com/DrSmooth/MaiBot"
-
+        
         # 服务特定的仓库 URL 映射
         self.service_repos = {
             "napcat-ada": {
@@ -186,6 +285,7 @@ class DeployManager:
         service_config: Dict[str, Any],
         instance_id: str,
         resolved_deploy_path: Path,
+        main_instance_port: str = None,
     ) -> bool:
         """
         部署单个服务的通用方法。
@@ -194,6 +294,7 @@ class DeployManager:
             service_config: 服务配置字典
             instance_id: 实例ID
             resolved_deploy_path: 主应用部署路径，用于清理时使用
+            main_instance_port: 主实例端口，用于配置服务连接
 
         Returns:
             bool: 部署成功返回True，失败返回False
@@ -274,7 +375,7 @@ class DeployManager:
         except Exception as e:
             logger.error(
                 f"复制服务配置文件失败: {e} (服务: {service_name}, 实例ID: {instance_id})"
-            )
+            )            
             if service_deploy_path.exists():
                 shutil.rmtree(service_deploy_path, ignore_errors=True)
             return False
@@ -291,6 +392,23 @@ class DeployManager:
             if service_deploy_path.exists():
                 shutil.rmtree(service_deploy_path, ignore_errors=True)
             return False
+
+        # 修改服务特定的配置文件
+        if service_name == "napcat-ada" and main_instance_port:
+            logger.info(f"开始修改 napcat-ada 配置文件 (实例ID: {instance_id})")
+            config_file_path = service_deploy_path / final_config_name
+            service_port = service_config.get("port", "8095")  # 默认使用8095端口
+            
+            config_success = modify_napcat_config_file(
+                config_file_path, service_port, main_instance_port, instance_id
+            )
+            if not config_success:
+                logger.error(
+                    f"修改 napcat-ada 配置文件失败 (实例ID: {instance_id})"
+                )
+                if service_deploy_path.exists():
+                    shutil.rmtree(service_deploy_path, ignore_errors=True)
+                return False
 
         logger.info(
             f"服务 '{service_name}' 部署和虚拟环境设置成功 (实例ID: {instance_id})"
@@ -425,8 +543,7 @@ class DeployManager:
                 func(path)
             else:
                 # Re-raise the error if it's not a permission issue we can fix
-                raise exc_instance  # Raise the original exception instance
-        else:
+                raise exc_instance  # Raise the original exception instance        else:
             # Re-raise other errors
             raise exc_instance  # Raise the original exception instance
 
@@ -436,6 +553,7 @@ class DeployManager:
         deploy_path: Path,  # MODIFIED: Accept deploy_path directly
         instance_id: str,
         services_to_install: List[Dict[str, Any]],
+        instance_port: str,  # 新增: 实例端口参数
     ) -> bool:
         # MODIFIED: Updated log message and use resolved deploy_path
         resolved_deploy_path = deploy_path.resolve()
@@ -500,7 +618,7 @@ class DeployManager:
                 logger.info(
                     f"成功复制 {source_file} 到 {destination_file} (实例ID: {instance_id})"
                 )
-            except Exception as e:
+            except Exception as e:                
                 logger.error(
                     f"复制文件 {source_file} 到 {destination_file} 失败 (实例ID: {instance_id}): {e}"
                 )
@@ -527,9 +645,15 @@ class DeployManager:
             shutil.rmtree(resolved_deploy_path, ignore_errors=True)  # 清理
             return False
 
-        logger.info(f"主应用文件部署完成 (实例ID: {instance_id})。开始处理服务部署...")
+        # 修改 .env 文件中的端口配置
+        logger.info(f"开始修改主程序 .env 文件端口配置 (实例ID: {instance_id})")
+        env_success = modify_env_file(env_final_file, instance_port, instance_id)
+        if not env_success:
+            logger.error(f"修改主程序 .env 文件失败 (实例ID: {instance_id})")
+            shutil.rmtree(resolved_deploy_path, ignore_errors=True)  # 清理
+            return False
 
-        # 服务部署逻辑 - 使用通用方法处理所有服务
+        logger.info(f"主应用文件部署完成 (实例ID: {instance_id})。开始处理服务部署...")        # 服务部署逻辑 - 使用通用方法处理所有服务
         services_deployed = 0
         total_services = len(services_to_install)
         for service_config in services_to_install:
@@ -539,7 +663,7 @@ class DeployManager:
             )
 
             service_success = self._deploy_service(
-                service_config, instance_id, resolved_deploy_path
+                service_config, instance_id, resolved_deploy_path, instance_port
             )
             if not service_success:
                 logger.error(
