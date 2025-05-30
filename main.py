@@ -132,7 +132,7 @@ def shutdown_from_tray():
 # --- 服务器启动 ---
 async def main():
     global tray_icon
-    
+
     logger.info("正在启动MaiLauncher后端服务器...")
     logger.info(f"HTTP 和 WebSocket 服务器将在 http://{HTTP_HOST}:{HTTP_PORT} 上启动")
 
@@ -148,7 +148,7 @@ async def main():
     # 初始化数据库
     logger.info("正在初始化数据库...")
     initialize_database()
-    
+
     # 启动托盘图标（如果可用且运行在无控制台模式）
     if is_tray_available():
         try:
@@ -230,7 +230,7 @@ async def main():
                 logger.info("托盘图标已停止")
             except Exception as e:
                 logger.error(f"停止托盘图标时发生错误: {e}")
-        
+
         logger.info("服务器已关闭。")
 
 

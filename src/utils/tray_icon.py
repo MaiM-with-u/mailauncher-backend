@@ -3,6 +3,7 @@
 系统托盘图标模块
 提供后台运行时的托盘图标和菜单功能
 """
+
 import threading
 from pathlib import Path
 from typing import Optional, Callable, Any
@@ -13,6 +14,7 @@ logger = get_module_logger("托盘图标")
 try:
     import pystray
     from PIL import Image
+
     TRAY_AVAILABLE: bool = True
 except ImportError:
     logger.warning("pystray 或 PIL 库未安装，托盘图标功能不可用")
@@ -21,7 +23,7 @@ except ImportError:
 
 class TrayIcon:
     """系统托盘图标管理器"""
-    
+
     def __init__(self, shutdown_callback: Optional[Callable[[], None]] = None) -> None:
         self.shutdown_callback = shutdown_callback
         self.icon: Optional[Any] = None  # pystray.Icon type
@@ -42,16 +44,16 @@ class TrayIcon:
                 logger.warning(f"图标文件不存在: {icon_path}")
         except Exception as e:
             logger.warning(f"加载图标文件失败: {e}")
-        
+
         # 如果无法加载图标文件，创建一个简单的默认图标
         try:
             # 创建一个简单的彩色方块作为默认图标
-            image = Image.new('RGBA', (64, 64), (70, 130, 180, 255))  # 钢蓝色
+            image = Image.new("RGBA", (64, 64), (70, 130, 180, 255))  # 钢蓝色
             return image
         except Exception as e:
-            logger.error(f"创建默认图标失败: {e}")            
+            logger.error(f"创建默认图标失败: {e}")
             return None
-            
+
     def quit_action(self, icon: Any, item: Any) -> None:
         """退出应用程序"""
         logger.info("用户通过托盘图标请求退出应用程序")
@@ -59,12 +61,12 @@ class TrayIcon:
         if self.shutdown_callback:
             self.shutdown_callback()
         icon.stop()
-        
+
     def show_status(self, icon: Any, item: Any) -> None:
         """显示状态信息（可扩展）"""
         logger.info("显示应用程序状态")
         # 这里可以扩展显示更多状态信息
-        
+
     def create_menu(self) -> Any:
         """创建托盘菜单"""
         return pystray.Menu(
@@ -72,41 +74,43 @@ class TrayIcon:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("状态信息", self.show_status),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("退出", self.quit_action)
+            pystray.MenuItem("退出", self.quit_action),
         )
+
     def run_tray(self) -> None:
         """运行托盘图标（在单独线程中运行）"""
         if not TRAY_AVAILABLE:
             logger.error("托盘图标库不可用，无法启动托盘功能")
             return
-            
+
         try:
             image = self.create_image()
             if image is None:
                 logger.error("无法创建托盘图标图像")
                 return
-                
+
             menu = self.create_menu()
-            
+
             self.icon = pystray.Icon(
                 "MaiLauncher Backend",
                 image,
                 menu=menu,
-                title="MaiLauncher Backend - 后端服务正在运行"
+                title="MaiLauncher Backend - 后端服务正在运行",
             )
-            
+
             self.running = True
             logger.info("托盘图标已启动")
             self.icon.run()
-            
+
         except Exception as e:
             logger.error(f"启动托盘图标时发生错误: {e}", exc_info=True)
+
     def start(self) -> bool:
         """启动托盘图标（异步启动）"""
         if not TRAY_AVAILABLE:
             logger.warning("托盘图标功能不可用")
             return False
-            
+
         try:
             # 在单独线程中启动托盘图标
             tray_thread = threading.Thread(target=self.run_tray, daemon=True)
@@ -116,7 +120,7 @@ class TrayIcon:
         except Exception as e:
             logger.error(f"启动托盘图标线程失败: {e}")
             return False
-    
+
     def stop(self):
         """停止托盘图标"""
         self.running = False
