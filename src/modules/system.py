@@ -17,11 +17,14 @@ def get_cpu_name():
     if platform.system() == "Windows":
         try:
             import wmi
+
             c = wmi.WMI()
             for processor in c.Win32_Processor():
                 return processor.Name
         except ImportError:
-            logger.warning("请安装 pywin32 和 wmi 库以获取 Windows CPU 名称：pip install pywin32 wmi")
+            logger.warning(
+                "请安装 pywin32 和 wmi 库以获取 Windows CPU 名称：pip install pywin32 wmi"
+            )
             return "无法获取 CPU 名称 (Windows)"
     elif platform.system() == "Linux":
         try:
@@ -34,7 +37,12 @@ def get_cpu_name():
     elif platform.system() == "Darwin":  # macOS
         try:
             import subprocess
-            return subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"]).decode().strip()
+
+            return (
+                subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"])
+                .decode()
+                .strip()
+            )
         except (subprocess.CalledProcessError, FileNotFoundError):
             return "无法获取 CPU 名称 (sysctl 命令出错或未找到)"
     else:

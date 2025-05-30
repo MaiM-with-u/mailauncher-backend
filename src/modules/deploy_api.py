@@ -84,10 +84,16 @@ class InstallStatusResponse(BaseModel):
 
 
 # 缓存操作函数
-def update_install_status(instance_id: str, status: str, progress: int, message: str, services_status: List[Dict] = None):
+def update_install_status(
+    instance_id: str,
+    status: str,
+    progress: int,
+    message: str,
+    services_status: List[Dict] = None,
+):
     """
     更新实例的安装状态到缓存
-    
+
     Args:
         instance_id: 实例ID
         status: 整体状态 ("preparing", "installing", "completed", "failed")
@@ -98,22 +104,26 @@ def update_install_status(instance_id: str, status: str, progress: int, message:
     with cache_lock:
         if instance_id not in install_status_cache:
             install_status_cache[instance_id] = {}
-        
-        install_status_cache[instance_id].update({
-            "status": status,
-            "progress": progress,
-            "message": message,
-            "services_install_status": services_status or [],
-            "last_updated": datetime.now().isoformat()
-        })
-        
+
+        install_status_cache[instance_id].update(
+            {
+                "status": status,
+                "progress": progress,
+                "message": message,
+                "services_install_status": services_status or [],
+                "last_updated": datetime.now().isoformat(),
+            }
+        )
+
     logger.info(f"更新实例 {instance_id} 安装状态: {status} ({progress}%) - {message}")
 
 
-def update_service_status(instance_id: str, service_name: str, status: str, progress: int, message: str):
+def update_service_status(
+    instance_id: str, service_name: str, status: str, progress: int, message: str
+):
     """
     更新特定服务的安装状态
-    
+
     Args:
         instance_id: 实例ID
         service_name: 服务名称
@@ -128,60 +138,69 @@ def update_service_status(instance_id: str, service_name: str, status: str, prog
                 "progress": 0,
                 "message": "正在准备安装...",
                 "services_install_status": [],
-                "last_updated": datetime.now().isoformat()
+                "last_updated": datetime.now().isoformat(),
             }
-        
-        services_status = install_status_cache[instance_id].get("services_install_status", [])
-        
+
+        services_status = install_status_cache[instance_id].get(
+            "services_install_status", []
+        )
+
         # 查找现有服务状态或创建新的
         service_found = False
         for service in services_status:
             if service["name"] == service_name:
-                service.update({
-                    "status": status,
-                    "progress": progress,
-                    "message": message
-                })
+                service.update(
+                    {"status": status, "progress": progress, "message": message}
+                )
                 service_found = True
                 break
-        
+
         if not service_found:
-            services_status.append({
-                "name": service_name,
-                "status": status,
-                "progress": progress,
-                "message": message
-            })
-        
+            services_status.append(
+                {
+                    "name": service_name,
+                    "status": status,
+                    "progress": progress,
+                    "message": message,
+                }
+            )
+
         # 计算整体进度
         if services_status:
-            overall_progress = sum(s["progress"] for s in services_status) // len(services_status)
+            overall_progress = sum(s["progress"] for s in services_status) // len(
+                services_status
+            )
             install_status_cache[instance_id]["progress"] = overall_progress
-        
+
         install_status_cache[instance_id]["services_install_status"] = services_status
         install_status_cache[instance_id]["last_updated"] = datetime.now().isoformat()
-    
-    logger.info(f"更新实例 {instance_id} 服务 {service_name} 状态: {status} ({progress}%) - {message}")
+
+    logger.info(
+        f"更新实例 {instance_id} 服务 {service_name} 状态: {status} ({progress}%) - {message}"
+    )
 
 
 def get_cached_install_status(instance_id: str) -> Dict:
     """
     从缓存获取安装状态
-    
+
     Args:
         instance_id: 实例ID
-        
+
     Returns:
         Dict: 安装状态数据
     """
     with cache_lock:
-        return install_status_cache.get(instance_id, {
-            "status": "not_found",
-            "progress": 0,
-            "message": "实例不存在或尚未开始安装",
-            "services_install_status": [],
-            "last_updated": datetime.now().isoformat()
-        })
+        return install_status_cache.get(
+            instance_id,
+            {
+                "status": "not_found",
+                "progress": 0,
+                "message": "实例不存在或尚未开始安装",
+                "services_install_status": [],
+                "last_updated": datetime.now().isoformat(),
+            },
+        )
 
 
 @router.post("/deploy", response_model=DeployResponse)  # 修改路径为 /deploy
@@ -214,7 +233,9 @@ async def deploy_maibot(payload: DeployRequest = Body(...)):
             )
 
         # 更新进度：开始部署
-        update_install_status(instance_id_str, "installing", 10, "正在下载并部署 MaiBot...")
+        update_install_status(
+            instance_id_str, "installing", 10, "正在下载并部署 MaiBot..."
+        )
 
         # 使用 deploy_manager 执行实际部署操作
         # 将 payload.install_path 替换为 instance_id_str
@@ -231,7 +252,8 @@ async def deploy_maibot(payload: DeployRequest = Body(...)):
 
         if not deploy_success:
             logger.error(
-                f"使用 deploy_manager 部署版本 {payload.version} 到实例 {instance_id_str} 失败。"            )
+                f"使用 deploy_manager 部署版本 {payload.version} 到实例 {instance_id_str} 失败。"
+            )
             update_install_status(instance_id_str, "failed", 0, "MaiBot 部署失败")
             # 注意：deploy_version 内部应该已经处理了部分创建文件的清理工作
             raise HTTPException(
@@ -244,26 +266,28 @@ async def deploy_maibot(payload: DeployRequest = Body(...)):
         )
 
         # 更新进度：部署完成，开始设置环境
-        update_install_status(instance_id_str, "installing", 40, "MaiBot 部署完成，正在设置虚拟环境...")
+        update_install_status(
+            instance_id_str, "installing", 40, "MaiBot 部署完成，正在设置虚拟环境..."
+        )
 
         # 设置虚拟环境并安装依赖
-        venv_success = await setup_virtual_environment(payload.install_path, instance_id_str)
+        venv_success = await setup_virtual_environment(
+            payload.install_path, instance_id_str
+        )
         if not venv_success:
-            logger.error(
-                f"为实例 {instance_id_str} 设置虚拟环境失败"
-            )
+            logger.error(f"为实例 {instance_id_str} 设置虚拟环境失败")
             update_install_status(instance_id_str, "failed", 40, "虚拟环境设置失败")
             raise HTTPException(
                 status_code=500,
                 detail="设置虚拟环境失败。请查看日志了解详情。",
             )
 
-        logger.info(
-            "虚拟环境设置成功。现在记录到数据库..."
-        )
+        logger.info("虚拟环境设置成功。现在记录到数据库...")
 
         # 更新进度：虚拟环境设置完成
-        update_install_status(instance_id_str, "installing", 80, "虚拟环境设置完成，正在保存实例信息...")
+        update_install_status(
+            instance_id_str, "installing", 80, "虚拟环境设置完成，正在保存实例信息..."
+        )
 
         try:
             new_instance_obj = instance_manager.create_instance(
@@ -297,19 +321,23 @@ async def deploy_maibot(payload: DeployRequest = Body(...)):
                     run_cmd=service_config.run_cmd,  # 添加 run_cmd
                 )
                 session.add(db_service)
-                
+
                 # 添加到服务状态列表
-                services_status.append({
-                    "name": service_config.name,
-                    "status": "pending",
-                    "progress": 0,
-                    "message": "等待安装"
-                })
+                services_status.append(
+                    {
+                        "name": service_config.name,
+                        "status": "pending",
+                        "progress": 0,
+                        "message": "等待安装",
+                    }
+                )
 
             session.commit()
 
             # 更新进度：完成部署
-            update_install_status(instance_id_str, "completed", 100, "部署完成！", services_status)
+            update_install_status(
+                instance_id_str, "completed", 100, "部署完成！", services_status
+            )
 
         except IntegrityError as e:
             session.rollback()
@@ -434,27 +462,28 @@ async def get_install_status(instance_id: str):
     检查安装进度和状态。
     """
     logger.info(f"收到检查安装状态请求，实例ID: {instance_id}")
-    
+
     # 从缓存获取安装状态
     cached_status = get_cached_install_status(instance_id)
-    
+
     # 如果状态是 not_found，返回适当的错误
     if cached_status["status"] == "not_found":
         raise HTTPException(
-            status_code=404, 
-            detail=f"实例 {instance_id} 不存在或尚未开始安装"
+            status_code=404, detail=f"实例 {instance_id} 不存在或尚未开始安装"
         )
-    
+
     # 转换服务状态为 Pydantic 模型
     services_status = []
     for service_data in cached_status.get("services_install_status", []):
-        services_status.append(ServiceInstallStatus(
-            name=service_data["name"],
-            status=service_data["status"],
-            progress=service_data["progress"],
-            message=service_data["message"]
-        ))
-    
+        services_status.append(
+            ServiceInstallStatus(
+                name=service_data["name"],
+                status=service_data["status"],
+                progress=service_data["progress"],
+                message=service_data["message"],
+            )
+        )
+
     return InstallStatusResponse(
         status=cached_status["status"],
         progress=cached_status["progress"],
@@ -475,7 +504,7 @@ async def setup_virtual_environment(install_path: str, instance_id: str) -> bool
         bool: 设置成功返回True，失败返回False
     """
     logger.info(f"开始为实例 {instance_id} 在 {install_path} 设置虚拟环境...")
-    
+
     # 更新状态：开始设置虚拟环境
     update_install_status(instance_id, "installing", 45, "正在创建虚拟环境...")
 
@@ -511,16 +540,22 @@ async def setup_virtual_environment(install_path: str, instance_id: str) -> bool
             return False
 
         logger.info(f"虚拟环境创建成功 (实例ID: {instance_id})")
-        
+
         # 更新状态：虚拟环境创建完成
-        update_install_status(instance_id, "installing", 55, "虚拟环境创建完成，检查依赖文件...")
+        update_install_status(
+            instance_id, "installing", 55, "虚拟环境创建完成，检查依赖文件..."
+        )
 
         # 2. 检查requirements.txt是否存在
         requirements_file = install_dir / "requirements.txt"
         if not requirements_file.exists():
-            logger.warning(f"requirements.txt 文件不存在于 {install_dir} (实例ID: {instance_id})")
+            logger.warning(
+                f"requirements.txt 文件不存在于 {install_dir} (实例ID: {instance_id})"
+            )
             logger.info(f"跳过依赖安装步骤 (实例ID: {instance_id})")
-            update_install_status(instance_id, "installing", 75, "未找到依赖文件，跳过依赖安装")
+            update_install_status(
+                instance_id, "installing", 75, "未找到依赖文件，跳过依赖安装"
+            )
             return True
 
         # 更新状态：开始安装依赖
@@ -539,7 +574,14 @@ async def setup_virtual_environment(install_path: str, instance_id: str) -> bool
 
         # 升级pip
         logger.info(f"升级pip (实例ID: {instance_id})")
-        upgrade_pip_cmd = [str(python_executable), "-m", "pip", "install", "--upgrade", "pip"]
+        upgrade_pip_cmd = [
+            str(python_executable),
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "pip",
+        ]
 
         result = subprocess.run(
             upgrade_pip_cmd,
@@ -552,10 +594,14 @@ async def setup_virtual_environment(install_path: str, instance_id: str) -> bool
 
         if result.returncode != 0:
             logger.warning(f"升级pip失败 (实例ID: {instance_id}): {result.stderr}")
-            update_install_status(instance_id, "installing", 65, "pip升级失败，继续安装依赖...")
+            update_install_status(
+                instance_id, "installing", 65, "pip升级失败，继续安装依赖..."
+            )
         else:
             logger.info(f"pip升级成功 (实例ID: {instance_id})")
-            update_install_status(instance_id, "installing", 65, "pip升级成功，正在安装依赖...")
+            update_install_status(
+                instance_id, "installing", 65, "pip升级成功，正在安装依赖..."
+            )
 
         # 安装requirements.txt中的依赖
         install_deps_cmd = [
@@ -565,7 +611,9 @@ async def setup_virtual_environment(install_path: str, instance_id: str) -> bool
             str(requirements_file),
         ]
 
-        logger.info(f"执行依赖安装命令: {' '.join(install_deps_cmd)} (实例ID: {instance_id})")
+        logger.info(
+            f"执行依赖安装命令: {' '.join(install_deps_cmd)} (实例ID: {instance_id})"
+        )
 
         result = subprocess.run(
             install_deps_cmd,
@@ -583,7 +631,7 @@ async def setup_virtual_environment(install_path: str, instance_id: str) -> bool
 
         logger.info(f"依赖安装成功 (实例ID: {instance_id})")
         logger.info(f"虚拟环境设置完成 (实例ID: {instance_id})")
-        
+
         # 更新状态：虚拟环境设置完成
         update_install_status(instance_id, "installing", 75, "依赖安装完成")
 
