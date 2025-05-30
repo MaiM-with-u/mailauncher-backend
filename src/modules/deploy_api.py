@@ -205,7 +205,9 @@ def get_cached_install_status(instance_id: str) -> Dict:
 
 
 @router.post("/deploy", response_model=DeployResponse)  # 修改路径为 /deploy
-async def deploy_maibot(payload: DeployRequest = Body(...), background_tasks: BackgroundTasks = None):
+async def deploy_maibot(
+    payload: DeployRequest = Body(...), background_tasks: BackgroundTasks = None
+):
     """
     部署指定版本的 MaiBot。
     """
@@ -236,9 +238,7 @@ async def deploy_maibot(payload: DeployRequest = Body(...), background_tasks: Ba
     # 将部署过程添加到后台任务
     if background_tasks:
         background_tasks.add_task(
-            perform_deployment_background, 
-            payload, 
-            instance_id_str
+            perform_deployment_background, payload, instance_id_str
         )
     else:
         # 如果没有 background_tasks（例如在测试中），创建一个异步任务
@@ -398,7 +398,7 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
         # 将 payload.install_path 替换为 instance_id_str
         # 并且传入 payload.install_services
         deploy_path = Path(payload.install_path)  # Create Path object for deploy_path
-        
+
         # 在线程池中执行同步的部署操作，避免阻塞事件循环
         loop = asyncio.get_event_loop()
         deploy_success = await loop.run_in_executor(
@@ -407,7 +407,7 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
             payload.version,
             deploy_path,
             instance_id_str,
-            [service.model_dump() for service in payload.install_services]
+            [service.model_dump() for service in payload.install_services],
         )
 
         if not deploy_success:
@@ -508,16 +508,16 @@ async def save_instance_to_database(payload: DeployRequest, instance_id_str: str
             )
 
     except IntegrityError as e:
-        logger.error(
-            f"部署实例 {payload.instance_name} 时发生数据库完整性错误: {e}"
-        )
+        logger.error(f"部署实例 {payload.instance_name} 时发生数据库完整性错误: {e}")
         update_install_status(instance_id_str, "failed", 80, f"数据库错误: {e}")
     except Exception as e:
         logger.error(f"部署实例 {payload.instance_name} 期间发生意外错误: {e}")
         update_install_status(instance_id_str, "failed", 80, f"内部错误: {e}")
 
 
-async def setup_virtual_environment_background(install_path: str, instance_id: str) -> bool:
+async def setup_virtual_environment_background(
+    install_path: str, instance_id: str
+) -> bool:
     """
     在后台线程中设置虚拟环境并安装依赖的异步版本
 
@@ -561,7 +561,7 @@ async def setup_virtual_environment_background(install_path: str, instance_id: s
                 text=True,
                 timeout=300,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-            )
+            ),
         )
 
         if result.returncode != 0:
@@ -622,7 +622,7 @@ async def setup_virtual_environment_background(install_path: str, instance_id: s
                 text=True,
                 timeout=300,
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-            )
+            ),
         )
 
         if result.returncode != 0:
@@ -657,7 +657,7 @@ async def setup_virtual_environment_background(install_path: str, instance_id: s
                 text=True,
                 timeout=600,  # 依赖安装可能需要更长时间
                 creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-            )
+            ),
         )
 
         if result.returncode != 0:
