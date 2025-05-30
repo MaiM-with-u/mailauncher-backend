@@ -1,6 +1,10 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import List, Optional
+import asyncio
+import os
+import shlex
+import shutil
 from src.modules.instance_manager import (
     InstanceStatus,
 )  # instance_manager 已适配SQLModel
@@ -11,9 +15,6 @@ from src.utils.database_model import (
 )  # SQLModel 版本 - 添加 Instances
 from src.utils.database import engine  # SQLModel 引擎
 from sqlmodel import Session, select  # SQLModel Session - 添加 select
-import asyncio
-import shlex
-import shutil
 from winpty import PtyProcess  # type: ignore
 from pathlib import Path
 from sqlalchemy.exc import IntegrityError
@@ -129,6 +130,28 @@ async def _start_pty_process(
         logger.error(f"无法确定会话 {session_id} 的 PTY 启动命令。")
         return False
 
+    # 添加详细的调试日志
+    logger.info(f"会话 {session_id} 获取到的命令: '{pty_command_str}'")
+    logger.info(f"会话 {session_id} 获取到的工作目录: '{pty_cwd}'")
+    
+    # 检查命令中是否包含虚拟环境路径
+    if "venv" in pty_command_str:
+        # 尝试提取虚拟环境 Python 路径进行验证
+        import re
+        python_exe_pattern = r'"([^"]*python\.exe)"'
+        match = re.search(python_exe_pattern, pty_command_str)
+        if match:
+            python_exe_path = match.group(1)
+            logger.info(f"检测到虚拟环境 Python 路径: {python_exe_path}")
+            
+            # 验证文件是否存在
+            from pathlib import Path            
+            if not Path(python_exe_path).exists():
+                logger.warning(f"虚拟环境 Python 文件不存在: {python_exe_path}")
+                logger.warning("这可能导致 PTY 启动失败")
+            else:
+                logger.info(f"虚拟环境 Python 文件存在且可访问: {python_exe_path}")
+
     async with active_ptys_lock:
         if (
             session_id in active_ptys
@@ -164,17 +187,15 @@ async def _start_pty_process(
                 logger.info(
                     f"已向现有虚拟终端发送启动命令 (会话: {session_id}): {pty_command_str}"
                 )
-                return True
-
+                return True            
             except Exception as e:
                 logger.error(f"向会话 {session_id} 的虚拟终端发送命令失败: {e}")
-                return False  # 如果虚拟终端不存在，创建新的 PTY 进程（直接执行命令）
+                return False
+                # 如果虚拟终端不存在，创建新的 PTY 进程（直接执行命令）
     try:
         # 为 PtyProcess.spawn 准备命令
         try:
             # 在Windows上，使用posix=False来正确处理路径
-            import os
-
             if os.name == "nt":
                 cmd_to_spawn = shlex.split(pty_command_str, posix=False)
             else:
@@ -182,18 +203,80 @@ async def _start_pty_process(
 
             if not cmd_to_spawn:
                 raise ValueError("命令字符串 shlex.split 后产生空列表")
+            
+            # 添加调试日志，显示分割后的命令
+            logger.info(f"会话 {session_id} shlex.split 结果: {cmd_to_spawn}")
+            # 在 Windows 上验证可执行文件路径
+            if os.name == "nt" and cmd_to_spawn:
+                executable_path = cmd_to_spawn[0]
+                logger.info(f"会话 {session_id} 准备执行的可执行文件: '{executable_path}'")
+                
+                # 去掉路径中的引号（如果存在）
+                clean_executable_path = executable_path.strip('"\'')
+                logger.info(f"会话 {session_id} 清理后的可执行文件路径: '{clean_executable_path}'")
+                
+                # 检查可执行文件是否存在
+                if not Path(clean_executable_path).exists():
+                    logger.error(f"可执行文件不存在: {clean_executable_path}")
+                    # 尝试检查是否有权限问题
+                    parent_dir = Path(clean_executable_path).parent
+                    if parent_dir.exists():
+                        logger.info(f"父目录存在: {parent_dir}")
+                        # 列出父目录内容以调试
+                        try:
+                            dir_contents = list(parent_dir.iterdir())
+                            logger.info(f"父目录内容: {[f.name for f in dir_contents]}")
+                        except Exception as list_err:
+                            logger.error(f"无法列出父目录内容: {list_err}")
+                    else:
+                        logger.error(f"父目录不存在: {parent_dir}")
+                else:
+                    logger.info(f"可执行文件验证通过: {clean_executable_path}")
+                    
+                # 更新命令列表，确保路径没有多余的引号
+                cmd_to_spawn[0] = clean_executable_path
+                    
         except ValueError as e_shlex:
             logger.warning(
                 f"会话 {session_id} 的 PTY_COMMAND ('{pty_command_str}') 无法被 shlex 分割: {e_shlex}。将按原样使用。"
             )
-            cmd_to_spawn = pty_command_str  # type: ignore
+            cmd_to_spawn = pty_command_str  # type: ignore        logger.info(f"会话 {session_id} 最终传递给 PtyProcess.spawn 的命令: {cmd_to_spawn}")
+        logger.info(f"会话 {session_id} 工作目录: {pty_cwd}")
+        
+        # 尝试启动 PTY 进程
+        pty_process = None
+        try:
+            pty_process = PtyProcess.spawn(
+                cmd_to_spawn, dimensions=(PTY_ROWS_DEFAULT, PTY_COLS_DEFAULT), cwd=pty_cwd
+            )
+            logger.info(
+                f"PTY 进程 (PID: {pty_process.pid}) 已通过 API 为会话 {session_id} 生成。"
+            )
+        except Exception as spawn_error:
+            logger.warning(f"直接启动 PTY 失败: {spawn_error}")
+            
+            # 在 Windows 上尝试备用策略：使用 cmd.exe 来执行命令
+            if os.name == "nt":
+                logger.info(f"会话 {session_id} 尝试使用 cmd.exe 备用策略...")
+                try:
+                    # 使用 cmd.exe /c 来执行原始命令
+                    cmd_wrapper = ["cmd.exe", "/c", pty_command_str]
+                    logger.info(f"会话 {session_id} 使用 cmd.exe 包装的命令: {cmd_wrapper}")
+                    
+                    pty_process = PtyProcess.spawn(
+                        cmd_wrapper, dimensions=(PTY_ROWS_DEFAULT, PTY_COLS_DEFAULT), cwd=pty_cwd
+                    )
+                    logger.info(
+                        f"PTY 进程 (PID: {pty_process.pid}) 通过 cmd.exe 备用策略为会话 {session_id} 生成。"
+                    )
+                except Exception as cmd_error:
+                    logger.error(f"cmd.exe 备用策略也失败: {cmd_error}")
+                    raise spawn_error  # 抛出原始错误
+            else:
+                raise spawn_error  # 非 Windows 系统直接抛出错误
 
-        pty_process = PtyProcess.spawn(
-            cmd_to_spawn, dimensions=(PTY_ROWS_DEFAULT, PTY_COLS_DEFAULT), cwd=pty_cwd
-        )
-        logger.info(
-            f"PTY 进程 (PID: {pty_process.pid}) 已通过 API 为会话 {session_id} 生成。"
-        )
+        if not pty_process:
+            raise Exception("无法创建 PTY 进程")
 
         async with active_ptys_lock:
             active_ptys[session_id] = {
@@ -684,7 +767,7 @@ async def delete_instance(instance_id: str):
             if instance_to_delete and instance_to_delete.path:
                 instance_path = Path(instance_to_delete.path)
                 if instance_path.exists():
-                    folders_to_delete.append(instance_to_delete.path)
+                    folders_to_delete.append(instance_path)
                     logger.info(f"将删除实例文件夹: {instance_to_delete.path}")
 
             # 5. 删除数据库记录
