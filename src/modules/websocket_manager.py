@@ -42,7 +42,7 @@ async def get_pty_command_and_cwd_from_instance(
         instance.status.value
         if isinstance(instance.status, InstanceStatus)
         else instance.status
-    )    
+    )
     pty_command: Optional[str] = None
     pty_cwd: Optional[str] = None
 
@@ -77,7 +77,7 @@ async def get_pty_command_and_cwd_from_instance(
             return None, None, status_value
 
         # 3. 从数据库获取服务详情，包括 run_cmd
-        service_details = await db.get_service_details(instance_short_id, type_part)        
+        service_details = await db.get_service_details(instance_short_id, type_part)
         if (
             service_details
             and service_details.path
