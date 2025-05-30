@@ -177,7 +177,8 @@ class DeployManager:
             }
         }  # 保持向后兼容性
         self.napcat_ada_primary_repo_url = self.service_repos["napcat-ada"]["primary"]
-        self.napcat_ada_secondary_repo_url = self.service_repos["napcat-ada"][            "secondary"
+        self.napcat_ada_secondary_repo_url = self.service_repos["napcat-ada"][
+            "secondary"
         ]
 
     def _deploy_service(
@@ -250,7 +251,8 @@ class DeployManager:
             return False
 
         logger.info(
-            f"服务 '{service_name}' 代码已成功克隆到 {service_deploy_path} (实例ID: {instance_id})"        )
+            f"服务 '{service_name}' 代码已成功克隆到 {service_deploy_path} (实例ID: {instance_id})"
+        )
 
         # 复制服务配置文件 - 使用服务自己的 template 目录
         template_config_name = service_repo_info["template_config"]
@@ -529,7 +531,7 @@ class DeployManager:
 
         # 服务部署逻辑 - 使用通用方法处理所有服务
         services_deployed = 0
-        total_services = len(services_to_install)        
+        total_services = len(services_to_install)
         for service_config in services_to_install:
             service_name = service_config.get("name", "unknown")
             logger.info(
