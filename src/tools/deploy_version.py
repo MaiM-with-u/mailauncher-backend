@@ -27,43 +27,42 @@ def modify_env_file(env_file_path: Path, instance_port: str, instance_id: str) -
         bool: 修改成功返回True，失败返回False
     """
     logger.info(f"开始修改 .env 文件端口配置 (实例ID: {instance_id})")
-    
+
     try:
         if not env_file_path.exists():
             logger.error(f".env 文件不存在: {env_file_path} (实例ID: {instance_id})")
             return False
-        
+
         # 读取原文件内容
-        with open(env_file_path, 'r', encoding='utf-8') as f:
+        with open(env_file_path, "r", encoding="utf-8") as f:
             content = f.read()
-        
+
         # 使用正则表达式替换 PORT 配置
-        pattern = r'PORT\s*=\s*\d+'
-        replacement = f'PORT={instance_port}'
-        
+        pattern = r"PORT\s*=\s*\d+"
+        replacement = f"PORT={instance_port}"
+
         if re.search(pattern, content):
             new_content = re.sub(pattern, replacement, content)
-            
+
             # 写回文件
-            with open(env_file_path, 'w', encoding='utf-8') as f:
+            with open(env_file_path, "w", encoding="utf-8") as f:
                 f.write(new_content)
-            
-            logger.info(f"成功修改 .env 文件端口为 {instance_port} (实例ID: {instance_id})")
+
+            logger.info(
+                f"成功修改 .env 文件端口为 {instance_port} (实例ID: {instance_id})"
+            )
             return True
         else:
             logger.warning(f".env 文件中未找到 PORT 配置 (实例ID: {instance_id})")
             return False
-            
+
     except Exception as e:
         logger.error(f"修改 .env 文件失败 (实例ID: {instance_id}): {e}")
         return False
 
 
 def modify_napcat_config_file(
-    config_file_path: Path, 
-    napcat_port: str, 
-    maibot_port: str, 
-    instance_id: str
+    config_file_path: Path, napcat_port: str, maibot_port: str, instance_id: str
 ) -> bool:
     """
     修改 napcat-ada 服务的 config.toml 文件。
@@ -78,37 +77,41 @@ def modify_napcat_config_file(
         bool: 修改成功返回True，失败返回False
     """
     logger.info(f"开始修改 napcat-ada config.toml 文件 (实例ID: {instance_id})")
-    
+
     try:
         if not config_file_path.exists():
-            logger.error(f"config.toml 文件不存在: {config_file_path} (实例ID: {instance_id})")
+            logger.error(
+                f"config.toml 文件不存在: {config_file_path} (实例ID: {instance_id})"
+            )
             return False
-        
+
         # 读取原文件内容
-        with open(config_file_path, 'r', encoding='utf-8') as f:
+        with open(config_file_path, "r", encoding="utf-8") as f:
             content = f.read()
-        
+
         # 替换 Napcat_Server 的 port
-        napcat_pattern = r'(\[Napcat_Server\].*?port\s*=\s*)\d+'
-        napcat_replacement = rf'\g<1>{napcat_port}'
+        napcat_pattern = r"(\[Napcat_Server\].*?port\s*=\s*)\d+"
+        napcat_replacement = rf"\g<1>{napcat_port}"
         content = re.sub(napcat_pattern, napcat_replacement, content, flags=re.DOTALL)
-        
+
         # 替换 MaiBot_Server 的 port
-        maibot_pattern = r'(\[MaiBot_Server\].*?port\s*=\s*)\d+'
-        maibot_replacement = rf'\g<1>{maibot_port}'
+        maibot_pattern = r"(\[MaiBot_Server\].*?port\s*=\s*)\d+"
+        maibot_replacement = rf"\g<1>{maibot_port}"
         content = re.sub(maibot_pattern, maibot_replacement, content, flags=re.DOTALL)
-        
+
         # 写回文件
-        with open(config_file_path, 'w', encoding='utf-8') as f:
+        with open(config_file_path, "w", encoding="utf-8") as f:
             f.write(content)
-        
+
         logger.info(
             f"成功修改 napcat-ada config.toml 文件: Napcat端口={napcat_port}, MaiBot端口={maibot_port} (实例ID: {instance_id})"
         )
         return True
-        
+
     except Exception as e:
-        logger.error(f"修改 napcat-ada config.toml 文件失败 (实例ID: {instance_id}): {e}")
+        logger.error(
+            f"修改 napcat-ada config.toml 文件失败 (实例ID: {instance_id}): {e}"
+        )
         return False
 
 
@@ -264,7 +267,7 @@ class DeployManager:
     def __init__(self):
         self.primary_repo_url = "https://github.com/MaiM-with-u/MaiBot"
         self.secondary_repo_url = "https://gitee.com/DrSmooth/MaiBot"
-        
+
         # 服务特定的仓库 URL 映射
         self.service_repos = {
             "napcat-ada": {
@@ -375,7 +378,7 @@ class DeployManager:
         except Exception as e:
             logger.error(
                 f"复制服务配置文件失败: {e} (服务: {service_name}, 实例ID: {instance_id})"
-            )            
+            )
             if service_deploy_path.exists():
                 shutil.rmtree(service_deploy_path, ignore_errors=True)
             return False
@@ -398,14 +401,12 @@ class DeployManager:
             logger.info(f"开始修改 napcat-ada 配置文件 (实例ID: {instance_id})")
             config_file_path = service_deploy_path / final_config_name
             service_port = service_config.get("port", "8095")  # 默认使用8095端口
-            
+
             config_success = modify_napcat_config_file(
                 config_file_path, service_port, main_instance_port, instance_id
             )
             if not config_success:
-                logger.error(
-                    f"修改 napcat-ada 配置文件失败 (实例ID: {instance_id})"
-                )
+                logger.error(f"修改 napcat-ada 配置文件失败 (实例ID: {instance_id})")
                 if service_deploy_path.exists():
                     shutil.rmtree(service_deploy_path, ignore_errors=True)
                 return False
@@ -618,7 +619,7 @@ class DeployManager:
                 logger.info(
                     f"成功复制 {source_file} 到 {destination_file} (实例ID: {instance_id})"
                 )
-            except Exception as e:                
+            except Exception as e:
                 logger.error(
                     f"复制文件 {source_file} 到 {destination_file} 失败 (实例ID: {instance_id}): {e}"
                 )
@@ -653,7 +654,9 @@ class DeployManager:
             shutil.rmtree(resolved_deploy_path, ignore_errors=True)  # 清理
             return False
 
-        logger.info(f"主应用文件部署完成 (实例ID: {instance_id})。开始处理服务部署...")        # 服务部署逻辑 - 使用通用方法处理所有服务
+        logger.info(
+            f"主应用文件部署完成 (实例ID: {instance_id})。开始处理服务部署..."
+        )  # 服务部署逻辑 - 使用通用方法处理所有服务
         services_deployed = 0
         total_services = len(services_to_install)
         for service_config in services_to_install:

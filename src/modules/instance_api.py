@@ -617,7 +617,7 @@ async def add_existing_instance(payload: DeployRequest):
 async def delete_instance(instance_id: str):
     """
     删除指定的实例及其关联的所有服务。
-    
+
     此函数将：
     1. 停止运行中的实例
     2. 清理所有相关的 PTY 进程
@@ -638,14 +638,16 @@ async def delete_instance(instance_id: str):
         # 可以选择强制停止或者要求用户先停止
         # 这里我们先停止实例
         await stop_instance(instance_id)
-        logger.info(f"实例 {instance_id} 已自动停止")    # 3. 停止并清理所有相关的 PTY 进程
+        logger.info(
+            f"实例 {instance_id} 已自动停止"
+        )  # 3. 停止并清理所有相关的 PTY 进程
     logger.info(f"正在清理实例 {instance_id} 的所有 PTY 进程...")
     await stop_all_ptys_for_instance(instance_id)
 
     # 4. 收集需要删除的文件夹路径
     folders_to_delete = []
     services_to_delete = []
-    
+
     try:
         with Session(engine) as session:
             # 获取所有相关的服务记录，收集路径信息
@@ -657,7 +659,9 @@ async def delete_instance(instance_id: str):
             for service in services_to_delete:
                 if service.path and Path(service.path).exists():
                     folders_to_delete.append(service.path)
-                    logger.info(f"将删除服务文件夹: {service.path} (服务: {service.name})")
+                    logger.info(
+                        f"将删除服务文件夹: {service.path} (服务: {service.name})"
+                    )
 
             # 获取实例记录，收集实例路径
             instance_to_delete = session.exec(
@@ -688,7 +692,7 @@ async def delete_instance(instance_id: str):
         # 7. 删除文件夹（在数据库事务成功后进行）
         deleted_folders = []
         failed_folders = []
-        
+
         for folder_path in folders_to_delete:
             try:
                 folder_path_obj = Path(folder_path)
@@ -716,10 +720,7 @@ async def delete_instance(instance_id: str):
             f"成功删除 {len(deleted_folders)} 个文件夹，{len(failed_folders)} 个文件夹删除失败"
         )
 
-        return ActionResponse(
-            success=True,
-            message=success_msg
-        )
+        return ActionResponse(success=True, message=success_msg)
 
     except Exception as e:
         logger.error(f"删除实例 {instance_id} 时发生错误: {e}", exc_info=True)
