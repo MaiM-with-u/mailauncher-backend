@@ -5,6 +5,7 @@
 """
 
 import threading
+# import asyncio
 from pathlib import Path
 from typing import Optional, Callable, Any
 from src.utils.logger import get_module_logger
@@ -52,15 +53,29 @@ class TrayIcon:
             return image
         except Exception as e:
             logger.error(f"创建默认图标失败: {e}")
-            return None
-
+            return None    
     def quit_action(self, icon: Any, item: Any) -> None:
         """退出应用程序"""
         logger.info("用户通过托盘图标请求退出应用程序")
         self.running = False
-        if self.shutdown_callback:
-            self.shutdown_callback()
-        icon.stop()
+        
+        # 延迟执行关闭回调，给托盘图标时间完成操作
+        def delayed_shutdown():
+            try:
+                if self.shutdown_callback:
+                    self.shutdown_callback()
+            except Exception as e:
+                logger.error(f"执行关闭回调时发生错误: {e}")
+            finally:
+                # 确保图标停止
+                try:
+                    icon.stop()
+                except Exception as e:
+                    logger.error(f"停止托盘图标时发生错误: {e}")
+        
+        # 在新线程中执行关闭，避免阻塞托盘图标
+        shutdown_thread = threading.Thread(target=delayed_shutdown, daemon=True)
+        shutdown_thread.start()
 
     def show_status(self, icon: Any, item: Any) -> None:
         """显示状态信息（可扩展）"""
