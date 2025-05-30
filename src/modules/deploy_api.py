@@ -397,9 +397,7 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
         # 使用 deploy_manager 执行实际部署操作
         # 将 payload.install_path 替换为 instance_id_str
         # 并且传入 payload.install_services
-        deploy_path = Path(payload.install_path)  # Create Path object for deploy_path
-
-        # 在线程池中执行同步的部署操作，避免阻塞事件循环
+        deploy_path = Path(payload.install_path)  # Create Path object for deploy_path        # 在线程池中执行同步的部署操作，避免阻塞事件循环
         loop = asyncio.get_event_loop()
         deploy_success = await loop.run_in_executor(
             None,
@@ -408,6 +406,7 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
             deploy_path,
             instance_id_str,
             [service.model_dump() for service in payload.install_services],
+            str(payload.port),  # 添加缺失的 instance_port 参数
         )
 
         if not deploy_success:
