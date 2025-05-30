@@ -707,4 +707,4 @@ async def _close_single_session(session_id: str):
 try:
     from winpty import PtyProcess  # type: ignore
 except ImportError:
-    logger.critical("未安装 winpty 库。此模块无法运行。请安装: pip install winpty")
+    logger.critical("未安装 winpty 库。此模块无法运行。请安装: pip install pywinpty")
