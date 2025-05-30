@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Response, WebSocket
+from fastapi import APIRouter, Response, WebSocket, WebSocketDisconnect
 from src.utils.logger import get_module_logger
 import signal
 import sys
@@ -66,6 +66,28 @@ async def root_dashboard():
 
 # APIRouterV1 上定义的所有路由都将以 API_PREFIX 为前缀
 
+
+# 添加测试API端点
+@global_server.app.get("/api/test")
+async def test_endpoint():
+    return {"status": "success", "message": "后端运行正常", "port": HTTP_PORT}
+
+# 添加简单的WebSocket测试端点
+@global_server.app.websocket("/ws")
+async def simple_websocket_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            logger.info(f"收到WebSocket消息: {data}")
+            # 处理消息...
+            await websocket.send_text(f"收到消息: {data}")
+    except WebSocketDisconnect:
+        logger.info("WebSocket连接断开")
+    except Exception as e:
+        logger.error(f"WebSocket错误: {e}")
+    finally:
+        await websocket.close()
 
 # 添加 WebSocket 路由
 # 注意：路径中的 {session_id} 将被传递给 handle_websocket_connection
