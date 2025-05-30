@@ -175,7 +175,7 @@ class DeployManager:
                 "template_config": "template_config.toml",
                 "final_config": "config.toml",
             }
-        }        # 保持向后兼容性
+        }  # 保持向后兼容性
         self.napcat_ada_primary_repo_url = self.service_repos["napcat-ada"]["primary"]
         self.napcat_ada_secondary_repo_url = self.service_repos["napcat-ada"][
             "secondary"
@@ -253,7 +253,7 @@ class DeployManager:
 
         logger.info(
             f"服务 '{service_name}' 代码已成功克隆到 {service_deploy_path} (实例ID: {instance_id})"
-        )        # 复制服务配置文件
+        )  # 复制服务配置文件
         template_config_name = service_repo_info["template_config"]
         final_config_name = service_repo_info["final_config"]
         source_service_config = template_dir / template_config_name
@@ -532,7 +532,7 @@ class DeployManager:
         total_services = len(services_to_install)
 
         for service_config in services_to_install:
-            service_name = service_config.get("name", "unknown")            
+            service_name = service_config.get("name", "unknown")
             logger.info(
                 f"正在部署服务 '{service_name}' ({services_deployed + 1}/{total_services}) (实例ID: {instance_id})"
             )
