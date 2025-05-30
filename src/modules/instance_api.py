@@ -168,17 +168,18 @@ async def _start_pty_process(
 
             except Exception as e:
                 logger.error(f"向会话 {session_id} 的虚拟终端发送命令失败: {e}")
-                return False    # 如果虚拟终端不存在，创建新的 PTY 进程（直接执行命令）
+                return False  # 如果虚拟终端不存在，创建新的 PTY 进程（直接执行命令）
     try:
         # 为 PtyProcess.spawn 准备命令
         try:
             # 在Windows上，使用posix=False来正确处理路径
             import os
+
             if os.name == "nt":
                 cmd_to_spawn = shlex.split(pty_command_str, posix=False)
             else:
                 cmd_to_spawn = shlex.split(pty_command_str)
-            
+
             if not cmd_to_spawn:
                 raise ValueError("命令字符串 shlex.split 后产生空列表")
         except ValueError as e_shlex:

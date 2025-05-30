@@ -696,7 +696,7 @@ def generate_venv_command(base_command: str, working_directory: str) -> str:
     # 检查虚拟环境是否存在
     if not venv_path.exists():
         logger.warning(f"虚拟环境不存在于 {venv_path}，将使用原始命令")
-        return base_command    # 根据操作系统生成不同的激活命令
+        return base_command  # 根据操作系统生成不同的激活命令
     if os.name == "nt":  # Windows
         # 检查虚拟环境的Python可执行文件是否存在
         venv_python = venv_path / "Scripts" / "python.exe"
@@ -704,7 +704,9 @@ def generate_venv_command(base_command: str, working_directory: str) -> str:
             # 直接使用虚拟环境中的Python可执行文件
             # 替换命令中的 "python" 为虚拟环境中的python路径，并添加引号
             if base_command.startswith("python "):
-                venv_command = f'"{str(venv_python)}"{base_command[6:]}'  # 去掉 "python"，添加引号
+                venv_command = (
+                    f'"{str(venv_python)}"{base_command[6:]}'  # 去掉 "python"，添加引号
+                )
             elif base_command == "python":
                 venv_command = f'"{str(venv_python)}"'  # 添加引号
             else:
