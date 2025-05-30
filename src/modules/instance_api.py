@@ -610,3 +610,67 @@ async def add_existing_instance(payload: DeployRequest):
         message=f"现有实例 {payload.instance_name} 已成功添加到系统中。",
         instance_id=instance_id_str,
     )
+
+
+@router.delete("/instance/{instance_id}/delete", response_model=ActionResponse)
+async def delete_instance(instance_id: str):
+    """
+    删除指定的实例及其关联的所有服务。
+    """
+    logger.info(f"收到删除实例 {instance_id} 的请求")
+    
+    # 1. 检查实例是否存在
+    instance = instance_manager.get_instance(instance_id)
+    if not instance:
+        logger.warning(f"要删除的实例 {instance_id} 不存在")
+        raise HTTPException(status_code=404, detail=f"未找到实例 {instance_id}")
+    
+    # 2. 确保实例已停止（可选的安全检查）
+    if instance.status == InstanceStatus.RUNNING.value:
+        logger.warning(f"实例 {instance_id} 仍在运行中，建议先停止实例再删除")
+        # 可以选择强制停止或者要求用户先停止
+        # 这里我们先停止实例
+        await stop_instance(instance_id)
+        logger.info(f"实例 {instance_id} 已自动停止")
+    
+    # 3. 停止并清理所有相关的 PTY 进程
+    logger.info(f"正在清理实例 {instance_id} 的所有 PTY 进程...")
+    await stop_all_ptys_for_instance(instance_id)
+    
+    try:
+        with Session(engine) as session:
+            # 4. 删除相关的服务记录
+            services_to_delete = session.exec(
+                select(Services).where(Services.instance_id == instance_id)
+            ).all()
+            
+            for service in services_to_delete:
+                session.delete(service)
+                logger.info(f"标记删除服务: {service.name} (实例ID: {instance_id})")
+            
+            # 5. 删除实例记录
+            instance_to_delete = session.exec(
+                select(Instances).where(Instances.instance_id == instance_id)
+            ).first()
+            
+            if instance_to_delete:
+                session.delete(instance_to_delete)
+                logger.info(f"标记删除实例: {instance_to_delete.name} (ID: {instance_id})")
+            
+            # 6. 提交事务
+            session.commit()
+            
+            logger.info(f"实例 {instance_id} ({instance.name}) 及其 {len(services_to_delete)} 个关联服务已成功从数据库中删除")
+            
+            return ActionResponse(
+                success=True,
+                message=f"实例 {instance.name} 及其关联服务已成功删除。"
+            )
+            
+    except Exception as e:
+        logger.error(f"删除实例 {instance_id} 时发生错误: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500, 
+            detail=f"删除实例失败: {str(e)}"
+        )
+
