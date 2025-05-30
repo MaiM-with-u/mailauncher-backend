@@ -1,8 +1,4 @@
 import asyncio
-import os
-import sys
-import subprocess
-from pathlib import Path
 from fastapi import WebSocket
 from starlette.websockets import WebSocketState, WebSocketDisconnect
 from winpty import PtyProcess  # type: ignore
