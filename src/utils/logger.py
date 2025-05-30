@@ -46,7 +46,8 @@ _custom_style_handlers: dict[Tuple[str, str], List[int]] = {}  # 记录自定义
 
 # 获取日志存储根地址
 current_file_path = Path(__file__).resolve()
-LOG_ROOT = get_resource_path("logs")
+# 日志根目录 - 支持通过环境变量自定义
+LOG_ROOT = os.environ.get("LOGS_DIR", get_resource_path("logs"))
 
 # LOG_LEVEL = global_config.get("Debug", {}).get("level", "INFO").upper()
 # print(global_config.debug_level)
