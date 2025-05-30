@@ -696,7 +696,7 @@ def generate_venv_command(base_command: str, working_directory: str) -> str:
     # 检查虚拟环境是否存在
     if not venv_path.exists():
         logger.warning(f"虚拟环境不存在于 {venv_path}，将使用原始命令")
-        return base_command    # 根据操作系统生成不同的激活命令
+        return base_command  # 根据操作系统生成不同的激活命令
     if os.name == "nt":  # Windows
         # 检查虚拟环境的Python可执行文件是否存在
         venv_python = venv_path / "Scripts" / "python.exe"
@@ -717,7 +717,7 @@ def generate_venv_command(base_command: str, working_directory: str) -> str:
             logger.warning(
                 f"虚拟环境Python可执行文件不存在于 {venv_python}，将使用原始命令"
             )
-            return base_command    
+            return base_command
         # 检查虚拟环境的Python可执行文件是否存在
         venv_python = venv_path / "bin" / "python"
         if venv_python.exists():
