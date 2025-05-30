@@ -237,16 +237,16 @@ async def _start_pty_process(
                     else:
                         logger.error(f"父目录不存在: {parent_dir}")
                 else:
-                    logger.info(f"可执行文件验证通过: {clean_executable_path}")
-
-                # 更新命令列表，确保路径没有多余的引号
+                    logger.info(f"可执行文件验证通过: {clean_executable_path}")                # 更新命令列表，确保路径没有多余的引号
                 cmd_to_spawn[0] = clean_executable_path
 
         except ValueError as e_shlex:
             logger.warning(
                 f"会话 {session_id} 的 PTY_COMMAND ('{pty_command_str}') 无法被 shlex 分割: {e_shlex}。将按原样使用。"
             )
-            cmd_to_spawn = pty_command_str  # type: ignore        logger.info(f"会话 {session_id} 最终传递给 PtyProcess.spawn 的命令: {cmd_to_spawn}")
+            cmd_to_spawn = pty_command_str  # type: ignore
+        
+        logger.info(f"会话 {session_id} 最终传递给 PtyProcess.spawn 的命令: {cmd_to_spawn}")
         logger.info(f"会话 {session_id} 工作目录: {pty_cwd}")
 
         # 尝试启动 PTY 进程
