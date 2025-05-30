@@ -390,22 +390,20 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
     """
     try:
         # 更新进度：验证安装路径
-        update_install_status(
-            instance_id_str, "installing", 5, "正在验证安装路径..."
-        )
-        
+        update_install_status(instance_id_str, "installing", 5, "正在验证安装路径...")
+
         # 验证安装路径
         deploy_path = Path(payload.install_path)
         if not deploy_path.parent.exists():
             logger.error(f"安装路径的父目录不存在: {deploy_path.parent}")
             update_install_status(instance_id_str, "failed", 5, "安装路径无效")
             return
-            
+
         # 更新进度：开始下载
         update_install_status(
             instance_id_str, "installing", 10, "正在连接到代码仓库..."
         )
-        
+
         # 更新进度：准备部署文件
         update_install_status(
             instance_id_str, "installing", 15, "正在下载 MaiBot 源代码..."
@@ -416,12 +414,12 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
         # 并且传入 payload.install_services
         # 在线程池中执行同步的部署操作，避免阻塞事件循环
         loop = asyncio.get_event_loop()
-        
-        # 更新进度：开始解压和配置        
+
+        # 更新进度：开始解压和配置
         update_install_status(
             instance_id_str, "installing", 25, "正在解压和配置文件..."
         )
-        
+
         deploy_success = await loop.run_in_executor(
             None,
             deploy_manager.deploy_version,
@@ -441,7 +439,10 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
 
         # 更新进度：部署文件完成
         update_install_status(
-            instance_id_str, "installing", 35, "MaiBot 文件部署完成，正在验证文件完整性..."
+            instance_id_str,
+            "installing",
+            35,
+            "MaiBot 文件部署完成，正在验证文件完整性...",
         )
 
         logger.info(
@@ -483,9 +484,7 @@ async def save_instance_to_database(payload: DeployRequest, instance_id_str: str
     """
     try:
         # 更新状态：开始数据库操作
-        update_install_status(
-            instance_id_str, "installing", 82, "正在创建实例信息..."
-        )
+        update_install_status(instance_id_str, "installing", 82, "正在创建实例信息...")
 
         with Session(engine) as session:
             new_instance_obj = instance_manager.create_instance(
@@ -508,7 +507,7 @@ async def save_instance_to_database(payload: DeployRequest, instance_id_str: str
             # 更新状态：创建服务配置
             update_install_status(
                 instance_id_str, "installing", 85, "正在配置服务信息..."
-            )            # 初始化服务状态
+            )  # 初始化服务状态
             services_status = []
             for service_config in payload.install_services:
                 db_service = Services(
@@ -641,12 +640,12 @@ async def setup_virtual_environment_background(
             update_install_status(
                 instance_id, "installing", 75, "未找到依赖文件，跳过依赖安装"
             )
-            return True        # 更新状态：开始安装依赖
+            return True  # 更新状态：开始安装依赖
         update_install_status(instance_id, "installing", 58, "正在准备依赖安装...")
 
         # 3. 安装依赖
         logger.info(f"开始安装依赖 (实例ID: {instance_id})")
-        
+
         # 更新状态：正在升级pip
         update_install_status(instance_id, "installing", 60, "正在升级pip...")
 
@@ -677,7 +676,8 @@ async def setup_virtual_environment_background(
                 capture_output=True,
                 text=True,
                 timeout=300,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,            ),
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            ),
         )
 
         if result.returncode != 0:
@@ -709,9 +709,7 @@ async def setup_virtual_environment_background(
         )
 
         # 更新状态：正在执行依赖安装
-        update_install_status(
-            instance_id, "installing", 70, "正在执行依赖安装命令..."
-        )
+        update_install_status(instance_id, "installing", 70, "正在执行依赖安装命令...")
 
         result = await loop.run_in_executor(
             None,
@@ -721,7 +719,8 @@ async def setup_virtual_environment_background(
                 capture_output=True,
                 text=True,
                 timeout=600,  # 依赖安装可能需要更长时间
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,            ),
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            ),
         )
 
         if result.returncode != 0:
