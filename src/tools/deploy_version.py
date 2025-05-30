@@ -356,8 +356,7 @@ class DeployManager:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                shell=False,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                shell=False,                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
             stdout, stderr = process.communicate(timeout=300)
             logger.info(f"Git clone 命令执行完毕。返回码: {process.returncode}")
@@ -373,19 +372,8 @@ class DeployManager:
                     logger.error(f"列出目录 {deploy_path} 内容失败: {e_list}")
 
                 git_dir = deploy_path / ".git"
-                if git_dir.is_dir():  # Sourcery suggestion applied
-                    logger.info(f"准备删除克隆下来的 .git 目录: {git_dir}")
-                    try:
-                        shutil.rmtree(
-                            git_dir, onexc=self._handle_remove_readonly
-                        )  # MODIFIED: Added onexc handler
-                        logger.info(f"成功删除 .git 目录: {git_dir}")
-                    except Exception as e_rm_git:
-                        logger.error(f"删除 .git 目录 {git_dir} 失败: {e_rm_git}")
-                        #  即使删除 .git 失败，也可能需要根据情况决定是否返回 True 或 False
-                        #  目前，如果删除 .git 失败，我们仍然认为克隆的主要部分是成功的，但记录错误。
-                        #  如果删除 .git 是关键步骤，则应返回 False
-                        pass  #  或者 return False，取决于业务逻辑
+                if git_dir.is_dir():
+                    logger.info(f"保留 .git 目录: {git_dir}")
                 else:
                     logger.warning(f"克隆完成后未找到 .git 目录: {git_dir}")
                 return True
