@@ -175,9 +175,7 @@ class DeployManager:
                 "template_config": "template_config.toml",
                 "final_config": "config.toml",
             }
-        }
-
-        # 保持向后兼容性
+        }        # 保持向后兼容性
         self.napcat_ada_primary_repo_url = self.service_repos["napcat-ada"]["primary"]
         self.napcat_ada_secondary_repo_url = self.service_repos["napcat-ada"][
             "secondary"
@@ -188,6 +186,7 @@ class DeployManager:
         service_config: Dict[str, Any],
         instance_id: str,
         resolved_deploy_path: Path,
+        template_dir: Path,
     ) -> bool:
         """
         部署单个服务的通用方法。
@@ -254,12 +253,10 @@ class DeployManager:
 
         logger.info(
             f"服务 '{service_name}' 代码已成功克隆到 {service_deploy_path} (实例ID: {instance_id})"
-        )
-
-        # 复制服务配置文件
+        )        # 复制服务配置文件
         template_config_name = service_repo_info["template_config"]
         final_config_name = service_repo_info["final_config"]
-        source_service_config = self.template_dir / template_config_name
+        source_service_config = template_dir / template_config_name
         destination_service_config = service_deploy_path / final_config_name
 
         try:
@@ -516,7 +513,8 @@ class DeployManager:
                     f"模板 .env 文件 {env_template_file} 不存在 (实例ID: {instance_id})。"
                 )
                 shutil.rmtree(resolved_deploy_path, ignore_errors=True)  # 清理
-                return False  # Added return False based on similar logic above            shutil.copy2(env_template_file, env_final_file)
+                return False  # Added return False based on similar logic above
+            shutil.copy2(env_template_file, env_final_file)
             logger.info(
                 f"成功复制 {env_template_file} 到 {env_final_file} (实例ID: {instance_id})"
             )
@@ -534,13 +532,13 @@ class DeployManager:
         total_services = len(services_to_install)
 
         for service_config in services_to_install:
-            service_name = service_config.get("name", "unknown")
+            service_name = service_config.get("name", "unknown")            
             logger.info(
                 f"正在部署服务 '{service_name}' ({services_deployed + 1}/{total_services}) (实例ID: {instance_id})"
             )
 
             service_success = self._deploy_service(
-                service_config, instance_id, resolved_deploy_path
+                service_config, instance_id, resolved_deploy_path, template_dir
             )
             if not service_success:
                 logger.error(
