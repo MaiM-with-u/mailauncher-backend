@@ -389,18 +389,39 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
     在后台执行部署任务的异步函数
     """
     try:
-        # 更新进度：开始部署
+        # 更新进度：验证安装路径
         update_install_status(
-            instance_id_str, "installing", 10, "正在下载并部署 MaiBot..."
+            instance_id_str, "installing", 5, "正在验证安装路径..."
+        )
+        
+        # 验证安装路径
+        deploy_path = Path(payload.install_path)
+        if not deploy_path.parent.exists():
+            logger.error(f"安装路径的父目录不存在: {deploy_path.parent}")
+            update_install_status(instance_id_str, "failed", 5, "安装路径无效")
+            return
+            
+        # 更新进度：开始下载
+        update_install_status(
+            instance_id_str, "installing", 10, "正在连接到代码仓库..."
+        )
+        
+        # 更新进度：准备部署文件
+        update_install_status(
+            instance_id_str, "installing", 15, "正在下载 MaiBot 源代码..."
         )
 
         # 使用 deploy_manager 执行实际部署操作
         # 将 payload.install_path 替换为 instance_id_str
         # 并且传入 payload.install_services
-        deploy_path = Path(
-            payload.install_path
-        )  # Create Path object for deploy_path        # 在线程池中执行同步的部署操作，避免阻塞事件循环
+        # 在线程池中执行同步的部署操作，避免阻塞事件循环
         loop = asyncio.get_event_loop()
+        
+        # 更新进度：开始解压和配置        
+        update_install_status(
+            instance_id_str, "installing", 25, "正在解压和配置文件..."
+        )
+        
         deploy_success = await loop.run_in_executor(
             None,
             deploy_manager.deploy_version,
@@ -415,16 +436,21 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
             logger.error(
                 f"使用 deploy_manager 部署版本 {payload.version} 到实例 {instance_id_str} 失败。"
             )
-            update_install_status(instance_id_str, "failed", 0, "MaiBot 部署失败")
+            update_install_status(instance_id_str, "failed", 25, "MaiBot 部署失败")
             return
+
+        # 更新进度：部署文件完成
+        update_install_status(
+            instance_id_str, "installing", 35, "MaiBot 文件部署完成，正在验证文件完整性..."
+        )
 
         logger.info(
             f"版本 {payload.version} 已成功部署到 {payload.install_path}。现在设置虚拟环境..."
         )
 
-        # 更新进度：部署完成，开始设置环境
+        # 更新进度：开始环境配置
         update_install_status(
-            instance_id_str, "installing", 40, "MaiBot 部署完成，正在设置虚拟环境..."
+            instance_id_str, "installing", 40, "文件验证完成，正在准备 Python 环境..."
         )
 
         # 设置虚拟环境并安装依赖
@@ -456,6 +482,11 @@ async def save_instance_to_database(payload: DeployRequest, instance_id_str: str
     将实例信息保存到数据库
     """
     try:
+        # 更新状态：开始数据库操作
+        update_install_status(
+            instance_id_str, "installing", 82, "正在创建实例信息..."
+        )
+
         with Session(engine) as session:
             new_instance_obj = instance_manager.create_instance(
                 name=payload.instance_name,
@@ -471,10 +502,13 @@ async def save_instance_to_database(payload: DeployRequest, instance_id_str: str
                 logger.error(
                     f"通过 InstanceManager 创建实例 {payload.instance_name} (ID: {instance_id_str}) 失败，但未引发异常。"
                 )
-                update_install_status(instance_id_str, "failed", 80, "实例信息保存失败")
+                update_install_status(instance_id_str, "failed", 82, "实例信息保存失败")
                 return
 
-            # 初始化服务状态
+            # 更新状态：创建服务配置
+            update_install_status(
+                instance_id_str, "installing", 85, "正在配置服务信息..."
+            )            # 初始化服务状态
             services_status = []
             for service_config in payload.install_services:
                 db_service = Services(
@@ -497,7 +531,17 @@ async def save_instance_to_database(payload: DeployRequest, instance_id_str: str
                     }
                 )
 
+            # 更新状态：提交数据库事务
+            update_install_status(
+                instance_id_str, "installing", 90, "正在保存配置到数据库..."
+            )
+
             session.commit()
+
+            # 更新状态：最终完成
+            update_install_status(
+                instance_id_str, "installing", 95, "正在完成最后配置..."
+            )
 
             # 更新进度：完成部署
             update_install_status(
@@ -542,10 +586,20 @@ async def setup_virtual_environment_background(
             update_install_status(instance_id, "failed", 45, "安装目录不存在")
             return False
 
+        # 更新状态：验证安装目录
+        update_install_status(
+            instance_id, "installing", 47, "安装目录验证完成，正在初始化虚拟环境..."
+        )
+
         logger.info(f"切换工作目录到: {install_dir} (实例ID: {instance_id})")
 
         # 创建虚拟环境目录路径
         venv_path = install_dir / "venv"
+
+        # 更新状态：开始创建虚拟环境
+        update_install_status(
+            instance_id, "installing", 50, "正在创建 Python 虚拟环境..."
+        )
 
         # 1. 创建虚拟环境
         logger.info(f"创建虚拟环境 {venv_path} (实例ID: {instance_id})")
@@ -587,13 +641,14 @@ async def setup_virtual_environment_background(
             update_install_status(
                 instance_id, "installing", 75, "未找到依赖文件，跳过依赖安装"
             )
-            return True
-
-        # 更新状态：开始安装依赖
-        update_install_status(instance_id, "installing", 60, "正在升级pip...")
+            return True        # 更新状态：开始安装依赖
+        update_install_status(instance_id, "installing", 58, "正在准备依赖安装...")
 
         # 3. 安装依赖
         logger.info(f"开始安装依赖 (实例ID: {instance_id})")
+        
+        # 更新状态：正在升级pip
+        update_install_status(instance_id, "installing", 60, "正在升级pip...")
 
         # 在Windows系统中，虚拟环境的Python和pip路径
         if os.name == "nt":
@@ -622,8 +677,7 @@ async def setup_virtual_environment_background(
                 capture_output=True,
                 text=True,
                 timeout=300,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-            ),
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,            ),
         )
 
         if result.returncode != 0:
@@ -637,6 +691,11 @@ async def setup_virtual_environment_background(
                 instance_id, "installing", 65, "pip升级成功，正在安装依赖..."
             )
 
+        # 更新状态：开始安装依赖包
+        update_install_status(
+            instance_id, "installing", 68, "正在安装 Python 依赖包..."
+        )
+
         # 安装requirements.txt中的依赖
         install_deps_cmd = [
             str(pip_executable),
@@ -649,6 +708,11 @@ async def setup_virtual_environment_background(
             f"执行依赖安装命令: {' '.join(install_deps_cmd)} (实例ID: {instance_id})"
         )
 
+        # 更新状态：正在执行依赖安装
+        update_install_status(
+            instance_id, "installing", 70, "正在执行依赖安装命令..."
+        )
+
         result = await loop.run_in_executor(
             None,
             lambda: subprocess.run(
@@ -657,20 +721,24 @@ async def setup_virtual_environment_background(
                 capture_output=True,
                 text=True,
                 timeout=600,  # 依赖安装可能需要更长时间
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-            ),
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,            ),
         )
 
         if result.returncode != 0:
             logger.error(f"依赖安装失败 (实例ID: {instance_id}): {result.stderr}")
-            update_install_status(instance_id, "failed", 65, "依赖安装失败")
+            update_install_status(instance_id, "failed", 70, "依赖安装失败")
             return False
+
+        # 更新状态：依赖安装成功
+        update_install_status(
+            instance_id, "installing", 73, "依赖安装成功，正在验证安装结果..."
+        )
 
         logger.info(f"依赖安装成功 (实例ID: {instance_id})")
         logger.info(f"虚拟环境设置完成 (实例ID: {instance_id})")
 
         # 更新状态：虚拟环境设置完成
-        update_install_status(instance_id, "installing", 75, "依赖安装完成")
+        update_install_status(instance_id, "installing", 75, "虚拟环境配置完成")
 
         return True
 
