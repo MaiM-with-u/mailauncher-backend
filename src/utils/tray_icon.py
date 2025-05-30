@@ -4,8 +4,6 @@
 提供后台运行时的托盘图标和菜单功能
 """
 import threading
-import sys
-import os
 from pathlib import Path
 from typing import Optional, Callable, Any
 from src.utils.logger import get_module_logger
