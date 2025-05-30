@@ -18,6 +18,7 @@ from src.modules.websocket_manager import (
     shutdown_all_websocket_connections,
 )  # Import the new handler and shutdown function
 import asyncio  # 添加 asyncio 导入
+from src.utils.tray_icon import TrayIcon, is_tray_available  # 添加托盘图标导入
 
 logger = get_module_logger("主程序")
 # --- 从 global_config 加载配置 ---
@@ -113,6 +114,7 @@ logger.info(f"已包含 API 路由，前缀为：{API_PREFIX}")
 
 # --- 全局变量用于优雅关闭 ---
 shutdown_event = asyncio.Event()
+tray_icon = None  # 全局托盘图标实例
 
 
 def signal_handler(signum, frame):
@@ -121,8 +123,16 @@ def signal_handler(signum, frame):
     shutdown_event.set()
 
 
+def shutdown_from_tray():
+    """从托盘图标触发的关闭函数"""
+    logger.info("托盘图标请求关闭应用程序")
+    shutdown_event.set()
+
+
 # --- 服务器启动 ---
 async def main():
+    global tray_icon
+    
     logger.info("正在启动MaiLauncher后端服务器...")
     logger.info(f"HTTP 和 WebSocket 服务器将在 http://{HTTP_HOST}:{HTTP_PORT} 上启动")
 
@@ -138,6 +148,19 @@ async def main():
     # 初始化数据库
     logger.info("正在初始化数据库...")
     initialize_database()
+    
+    # 启动托盘图标（如果可用且运行在无控制台模式）
+    if is_tray_available():
+        try:
+            tray_icon = TrayIcon(shutdown_from_tray)
+            if tray_icon.start():
+                logger.info("托盘图标已启动，应用程序将在后台运行")
+            else:
+                logger.warning("托盘图标启动失败")
+        except Exception as e:
+            logger.error(f"启动托盘图标时发生错误: {e}")
+    else:
+        logger.info("托盘图标功能不可用，应用程序将在前台运行")
     logger.info("数据库初始化完成。")
 
     # 启动 Uvicorn 服务器
@@ -200,6 +223,14 @@ async def main():
         # 关闭所有 WebSocket 连接
         await shutdown_all_websocket_connections()
     finally:
+        # 停止托盘图标
+        if tray_icon:
+            try:
+                tray_icon.stop()
+                logger.info("托盘图标已停止")
+            except Exception as e:
+                logger.error(f"停止托盘图标时发生错误: {e}")
+        
         logger.info("服务器已关闭。")
 
 
