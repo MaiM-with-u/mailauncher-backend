@@ -98,7 +98,9 @@ def modify_napcat_config_file(
         # 替换 MaiBot_Server 的 port
         maibot_pattern = r"(\[MaiBot_Server\].*?port\s*=\s*)\d+"
         maibot_replacement = rf"\g<1>{maibot_port}"
-        content = re.sub(maibot_pattern, maibot_replacement, content, flags=re.DOTALL)        # 写回文件
+        content = re.sub(
+            maibot_pattern, maibot_replacement, content, flags=re.DOTALL
+        )  # 写回文件
         with open(config_file_path, "w", encoding="utf-8") as f:
             f.write(content)
 
@@ -138,24 +140,32 @@ def create_agreement_confirmation_files(deploy_path: Path, instance_id: str) -> 
             with open(eula_file, "r", encoding="utf-8") as f:
                 eula_content = f.read()
             eula_hash = hashlib.md5(eula_content.encode("utf-8")).hexdigest()
-            
+
             # 创建EULA确认文件
             eula_confirm_file.write_text(eula_hash, encoding="utf-8")
-            logger.info(f"成功创建EULA确认文件: {eula_confirm_file} (实例ID: {instance_id})")
+            logger.info(
+                f"成功创建EULA确认文件: {eula_confirm_file} (实例ID: {instance_id})"
+            )
         else:
-            logger.warning(f"EULA.md 文件不存在，跳过EULA确认文件创建 (实例ID: {instance_id})")
+            logger.warning(
+                f"EULA.md 文件不存在，跳过EULA确认文件创建 (实例ID: {instance_id})"
+            )
 
         # 检查隐私政策文件是否存在并计算哈希值
         if privacy_file.exists():
             with open(privacy_file, "r", encoding="utf-8") as f:
                 privacy_content = f.read()
             privacy_hash = hashlib.md5(privacy_content.encode("utf-8")).hexdigest()
-            
+
             # 创建隐私政策确认文件
             privacy_confirm_file.write_text(privacy_hash, encoding="utf-8")
-            logger.info(f"成功创建隐私政策确认文件: {privacy_confirm_file} (实例ID: {instance_id})")
+            logger.info(
+                f"成功创建隐私政策确认文件: {privacy_confirm_file} (实例ID: {instance_id})"
+            )
         else:
-            logger.warning(f"PRIVACY.md 文件不存在，跳过隐私政策确认文件创建 (实例ID: {instance_id})")
+            logger.warning(
+                f"PRIVACY.md 文件不存在，跳过隐私政策确认文件创建 (实例ID: {instance_id})"
+            )
 
         logger.info(f"用户协议和隐私政策确认文件创建完成 (实例ID: {instance_id})")
         return True
@@ -633,16 +643,20 @@ class DeployManager:
                 if resolved_deploy_path.exists():
                     logger.info(
                         f"清理部署失败的路径: {resolved_deploy_path} (实例ID: {instance_id})"
-                    )                    
+                    )
                     shutil.rmtree(resolved_deploy_path, ignore_errors=True)
                 return False
 
         logger.info(f"代码已成功克隆到 {resolved_deploy_path} (实例ID: {instance_id})")
 
         # 创建用户协议和隐私政策确认文件
-        confirmation_success = create_agreement_confirmation_files(resolved_deploy_path, instance_id)
+        confirmation_success = create_agreement_confirmation_files(
+            resolved_deploy_path, instance_id
+        )
         if not confirmation_success:
-            logger.warning(f"创建确认文件失败，但不影响部署继续进行 (实例ID: {instance_id})")
+            logger.warning(
+                f"创建确认文件失败，但不影响部署继续进行 (实例ID: {instance_id})"
+            )
 
         config_dir = resolved_deploy_path / "config"
         template_dir = resolved_deploy_path / "template"
