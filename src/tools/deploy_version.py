@@ -177,8 +177,7 @@ class DeployManager:
             }
         }  # 保持向后兼容性
         self.napcat_ada_primary_repo_url = self.service_repos["napcat-ada"]["primary"]
-        self.napcat_ada_secondary_repo_url = self.service_repos["napcat-ada"][
-            "secondary"
+        self.napcat_ada_secondary_repo_url = self.service_repos["napcat-ada"][            "secondary"
         ]
 
     def _deploy_service(
@@ -186,7 +185,6 @@ class DeployManager:
         service_config: Dict[str, Any],
         instance_id: str,
         resolved_deploy_path: Path,
-        template_dir: Path,
     ) -> bool:
         """
         部署单个服务的通用方法。
@@ -252,11 +250,13 @@ class DeployManager:
             return False
 
         logger.info(
-            f"服务 '{service_name}' 代码已成功克隆到 {service_deploy_path} (实例ID: {instance_id})"
-        )  # 复制服务配置文件
+            f"服务 '{service_name}' 代码已成功克隆到 {service_deploy_path} (实例ID: {instance_id})"        )
+
+        # 复制服务配置文件 - 使用服务自己的 template 目录
         template_config_name = service_repo_info["template_config"]
         final_config_name = service_repo_info["final_config"]
-        source_service_config = template_dir / template_config_name
+        service_template_dir = service_deploy_path / "template"
+        source_service_config = service_template_dir / template_config_name
         destination_service_config = service_deploy_path / final_config_name
 
         try:
@@ -529,8 +529,7 @@ class DeployManager:
 
         # 服务部署逻辑 - 使用通用方法处理所有服务
         services_deployed = 0
-        total_services = len(services_to_install)
-
+        total_services = len(services_to_install)        
         for service_config in services_to_install:
             service_name = service_config.get("name", "unknown")
             logger.info(
@@ -538,7 +537,7 @@ class DeployManager:
             )
 
             service_success = self._deploy_service(
-                service_config, instance_id, resolved_deploy_path, template_dir
+                service_config, instance_id, resolved_deploy_path
             )
             if not service_success:
                 logger.error(
