@@ -645,3 +645,61 @@ async def setup_virtual_environment(install_path: str, instance_id: str) -> bool
         logger.error(f"设置虚拟环境时发生异常 (实例ID: {instance_id}): {e}")
         update_install_status(instance_id, "failed", 45, f"虚拟环境设置异常: {str(e)}")
         return False
+
+
+def generate_venv_command(base_command: str, working_directory: str) -> str:
+    """
+    生成带虚拟环境激活的启动命令。
+    
+    Args:
+        base_command: 基础运行命令（如 "python bot.py"）
+        working_directory: 工作目录路径
+        
+    Returns:
+        str: 带虚拟环境激活的完整命令
+    """
+    working_dir = Path(working_directory).resolve()
+    venv_path = working_dir / "venv"
+    
+    # 检查虚拟环境是否存在
+    if not venv_path.exists():
+        logger.warning(f"虚拟环境不存在于 {venv_path}，将使用原始命令")
+        return base_command
+    
+    # 根据操作系统生成不同的激活命令
+    if os.name == "nt":  # Windows
+        # 检查虚拟环境的Python可执行文件是否存在
+        venv_python = venv_path / "Scripts" / "python.exe"
+        if venv_python.exists():
+            # 直接使用虚拟环境中的Python可执行文件
+            # 替换命令中的 "python" 为虚拟环境中的python路径
+            if base_command.startswith("python "):
+                venv_command = str(venv_python) + base_command[6:]  # 去掉 "python"
+            elif base_command == "python":
+                venv_command = str(venv_python)
+            else:
+                # 如果命令不是以python开头，使用激活脚本的方式
+                activate_script = venv_path / "Scripts" / "activate.bat"
+                venv_command = f'cmd /c "{activate_script} && {base_command}"'
+        else:
+            logger.warning(f"虚拟环境Python可执行文件不存在于 {venv_python}，将使用原始命令")
+            return base_command
+    else:  # Linux/Unix
+        # 检查虚拟环境的Python可执行文件是否存在
+        venv_python = venv_path / "bin" / "python"
+        if venv_python.exists():
+            # 直接使用虚拟环境中的Python可执行文件
+            if base_command.startswith("python "):
+                venv_command = str(venv_python) + base_command[6:]  # 去掉 "python"
+            elif base_command == "python":
+                venv_command = str(venv_python)
+            else:
+                # 如果命令不是以python开头，使用激活脚本的方式
+                activate_script = venv_path / "bin" / "activate"
+                venv_command = f'bash -c "source {activate_script} && {base_command}"'
+        else:
+            logger.warning(f"虚拟环境Python可执行文件不存在于 {venv_python}，将使用原始命令")
+            return base_command
+    
+    logger.info(f"生成虚拟环境命令: {base_command} -> {venv_command}")
+    return venv_command

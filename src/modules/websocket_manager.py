@@ -9,6 +9,7 @@ import logging
 from src.utils.database import Database, get_db_instance
 from src.modules.instance_manager import instance_manager, InstanceStatus
 from src.utils.database_model import Instances
+from src.modules.deploy_api import generate_venv_command
 
 logger = logging.getLogger(__name__)
 
@@ -41,17 +42,18 @@ async def get_pty_command_and_cwd_from_instance(
         instance.status.value
         if isinstance(instance.status, InstanceStatus)
         else instance.status
-    )
-
+    )    
     pty_command: Optional[str] = None
     pty_cwd: Optional[str] = None
 
     if type_part == "main":
         # 主程序 PTY 配置
-        pty_command = "python bot.py"
+        base_command = "python bot.py"
         pty_cwd = instance.path
+        # 使用虚拟环境激活的命令
+        pty_command = generate_venv_command(base_command, pty_cwd)
         logger.info(
-            f"为 'main' 类型 (实例 '{instance_short_id}') 配置 PTY: 命令='{pty_command}', CWD='{pty_cwd}'"
+            f"为 'main' 类型 (实例 '{instance_short_id}') 配置 PTY: 基础命令='{base_command}', 虚拟环境命令='{pty_command}', CWD='{pty_cwd}'"
         )
     else:  # Adapter/Service PTY configuration (type_part is the service name)
         logger.info(f"为服务 '{type_part}' (实例 '{instance_short_id}') 配置 PTY。")
@@ -75,8 +77,7 @@ async def get_pty_command_and_cwd_from_instance(
             return None, None, status_value
 
         # 3. 从数据库获取服务详情，包括 run_cmd
-        service_details = await db.get_service_details(instance_short_id, type_part)
-
+        service_details = await db.get_service_details(instance_short_id, type_part)        
         if (
             service_details
             and service_details.path
@@ -84,11 +85,13 @@ async def get_pty_command_and_cwd_from_instance(
             and service_details.run_cmd
         ):
             pty_cwd = service_details.path
-            pty_command = service_details.run_cmd  # 使用 Services 表中的 run_cmd 字段
+            base_command = service_details.run_cmd  # 使用 Services 表中的 run_cmd 字段
+            # 使用虚拟环境激活的命令
+            pty_command = generate_venv_command(base_command, pty_cwd)
 
             logger.info(
                 f"从数据库为服务 '{type_part}' (实例 '{instance_short_id}') 配置 PTY: "
-                f"命令='{pty_command}', CWD='{pty_cwd}'"
+                f"基础命令='{base_command}', 虚拟环境命令='{pty_command}', CWD='{pty_cwd}'"
             )
         else:
             # 详细记录配置失败的原因
