@@ -1,0 +1,18 @@
+# Cross-platform requirements configuration for different operating systems
+# Base requirements for all platforms
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
+loguru>=0.7.2
+sqlmodel>=0.0.14
+psutil>=5.9.6
+python-multipart>=0.0.6
+pydantic>=2.5.0
+httpx>=0.25.2
+rich>=13.7.0
+
+# Windows-specific dependencies
+pywin32>=306; sys_platform == "win32"
+pywinpty>=2.0.12; sys_platform == "win32"
+
+# Development and build dependencies (uncomment if needed locally)
+# pyinstaller>=6.2.0

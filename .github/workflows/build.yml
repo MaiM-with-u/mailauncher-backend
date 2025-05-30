@@ -1,4 +1,4 @@
-name: Build EXE
+name: Build Cross-Platform Executables
 
 on:
   push:
@@ -8,7 +8,25 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            python-version: '3.12'
+            artifact-name: MaiLauncher-Backend-Windows
+            executable-name: MaiLauncher-Backend.exe
+            spec-file: main.spec
+          - os: ubuntu-latest
+            python-version: '3.12'
+            artifact-name: MaiLauncher-Backend-Linux
+            executable-name: MaiLauncher-Backend
+            spec-file: main-linux.spec
+          - os: macos-latest
+            python-version: '3.12'
+            artifact-name: MaiLauncher-Backend-macOS
+            executable-name: MaiLauncher-Backend
+            spec-file: main-macos.spec
     
     steps:
     - name: Checkout code
@@ -17,12 +35,22 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.12'
+        python-version: ${{ matrix.python-version }}
         
-    - name: Cache pip dependencies
+    - name: Cache pip dependencies (Windows)
+      if: matrix.os == 'windows-latest'
       uses: actions/cache@v3
       with:
         path: ~\AppData\Local\pip\Cache
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    - name: Cache pip dependencies (Linux/macOS)
+      if: matrix.os != 'windows-latest'
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
         restore-keys: |
           ${{ runner.os }}-pip-
@@ -33,35 +61,75 @@ jobs:
         pip install -r requirements.txt
         pip install pyinstaller
         
-    - name: Create data directory if not exists
+    - name: Install platform-specific dependencies (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential
+        
+    - name: Create data directory (Windows)
+      if: matrix.os == 'windows-latest'
       run: |
         if (!(Test-Path "data")) { New-Item -ItemType Directory -Path "data" }
         
-    - name: Build EXE
+    - name: Create data directory (Linux/macOS)
+      if: matrix.os != 'windows-latest'
       run: |
-        pyinstaller main.spec
+        mkdir -p data
+        
+    - name: Build executable
+      run: |
+        pyinstaller ${{ matrix.spec-file }}
+        
+    - name: Make executable (Linux/macOS)
+      if: matrix.os != 'windows-latest'
+      run: |
+        chmod +x dist/MaiLauncher-Backend
         
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: MaiLauncher-Backend-${{ github.sha }}
+        name: ${{ matrix.artifact-name }}-${{ github.sha }}
         path: |
-          dist/MaiLauncher-Backend.exe
+          dist/${{ matrix.executable-name }}
         retention-days: 30
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ./artifacts
         
-    - name: Create Release (on main branch)
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    - name: Display structure of downloaded files
+      run: ls -la ./artifacts/
+      
+    - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         tag_name: build-${{ github.run_number }}
         name: Auto Build ${{ github.run_number }}
         body: |
-          Automated build from commit ${{ github.sha }}
+          Automated cross-platform build from commit ${{ github.sha }}
+          
+          Platforms included:
+          - Windows (x64) - MaiLauncher-Backend.exe
+          - Linux (x64) - MaiLauncher-Backend
+          - macOS (x64) - MaiLauncher-Backend
           
           Changes in this build:
           ${{ github.event.head_commit.message }}
         files: |
-          dist/MaiLauncher-Backend.exe
+          ./artifacts/MaiLauncher-Backend-Windows-${{ github.sha }}/MaiLauncher-Backend.exe
+          ./artifacts/MaiLauncher-Backend-Linux-${{ github.sha }}/MaiLauncher-Backend
+          ./artifacts/MaiLauncher-Backend-macOS-${{ github.sha }}/MaiLauncher-Backend
         draft: false
         prerelease: true
       env:
