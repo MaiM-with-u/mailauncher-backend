@@ -4,6 +4,7 @@ import subprocess
 from pathlib import Path
 from src.utils.logger import get_module_logger
 import stat  # For file permissions
+import sys  # 添加sys导入，用于虚拟环境创建
 # import errno # For error codes
 
 # Import List for type hinting
@@ -12,19 +13,241 @@ from typing import List, Dict, Any
 logger = get_module_logger("版本部署工具")
 
 
+def setup_service_virtual_environment(service_path: str, service_name: str, instance_id: str) -> bool:
+    """
+    在指定的服务目录中设置虚拟环境并安装依赖。
+
+    Args:
+        service_path: 服务目录路径
+        service_name: 服务名称
+        instance_id: 实例ID
+
+    Returns:
+        bool: 设置成功返回True，失败返回False
+    """
+    logger.info(f"开始为服务 {service_name} (实例ID: {instance_id}) 在 {service_path} 设置虚拟环境...")
+
+    try:
+        # 将工作目录切换到服务目录
+        service_dir = Path(service_path).resolve()
+        if not service_dir.exists():
+            logger.error(f"服务目录 {service_dir} 不存在 (服务: {service_name}, 实例ID: {instance_id})")
+            return False
+
+        logger.info(f"切换工作目录到: {service_dir} (服务: {service_name}, 实例ID: {instance_id})")
+
+        # 创建虚拟环境目录路径
+        venv_path = service_dir / "venv"
+
+        # 1. 创建虚拟环境
+        logger.info(f"创建虚拟环境 {venv_path} (服务: {service_name}, 实例ID: {instance_id})")
+        create_venv_cmd = [sys.executable, "-m", "venv", str(venv_path)]
+
+        result = subprocess.run(
+            create_venv_cmd,
+            cwd=str(service_dir),
+            capture_output=True,
+            text=True,
+            timeout=300,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+
+        if result.returncode != 0:
+            logger.error(f"创建虚拟环境失败 (服务: {service_name}, 实例ID: {instance_id}): {result.stderr}")
+            return False
+
+        logger.info(f"虚拟环境创建成功 (服务: {service_name}, 实例ID: {instance_id})")
+
+        # 2. 检查requirements.txt是否存在
+        requirements_file = service_dir / "requirements.txt"
+        if not requirements_file.exists():
+            logger.warning(
+                f"requirements.txt 文件不存在于 {service_dir} (服务: {service_name}, 实例ID: {instance_id})"
+            )
+            logger.info(f"跳过依赖安装步骤 (服务: {service_name}, 实例ID: {instance_id})")
+            return True
+
+        # 3. 安装依赖
+        logger.info(f"开始安装依赖 (服务: {service_name}, 实例ID: {instance_id})")
+
+        # 在Windows系统中，虚拟环境的Python和pip路径
+        if os.name == "nt":
+            python_executable = venv_path / "Scripts" / "python.exe"
+            pip_executable = venv_path / "Scripts" / "pip.exe"
+        else:
+            python_executable = venv_path / "bin" / "python"
+            pip_executable = venv_path / "bin" / "pip"
+
+        # 升级pip
+        logger.info(f"升级pip (服务: {service_name}, 实例ID: {instance_id})")
+        upgrade_pip_cmd = [
+            str(python_executable),
+            "-m",
+            "pip",
+            "install",
+            "--upgrade",
+            "pip",
+        ]
+
+        result = subprocess.run(
+            upgrade_pip_cmd,
+            cwd=str(service_dir),
+            capture_output=True,
+            text=True,
+            timeout=300,
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+
+        if result.returncode != 0:
+            logger.warning(f"升级pip失败 (服务: {service_name}, 实例ID: {instance_id}): {result.stderr}")
+        else:
+            logger.info(f"pip升级成功 (服务: {service_name}, 实例ID: {instance_id})")
+
+        # 安装requirements.txt中的依赖
+        install_deps_cmd = [
+            str(pip_executable),
+            "install",
+            "-r",
+            str(requirements_file),
+        ]
+
+        logger.info(
+            f"执行依赖安装命令: {' '.join(install_deps_cmd)} (服务: {service_name}, 实例ID: {instance_id})"
+        )
+
+        result = subprocess.run(
+            install_deps_cmd,
+            cwd=str(service_dir),
+            capture_output=True,
+            text=True,
+            timeout=600,  # 依赖安装可能需要更长时间
+            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        )
+
+        if result.returncode != 0:
+            logger.error(f"依赖安装失败 (服务: {service_name}, 实例ID: {instance_id}): {result.stderr}")
+            return False
+
+        logger.info(f"依赖安装成功 (服务: {service_name}, 实例ID: {instance_id})")
+        logger.info(f"虚拟环境设置完成 (服务: {service_name}, 实例ID: {instance_id})")
+
+        return True
+
+    except subprocess.TimeoutExpired:
+        logger.error(f"虚拟环境设置超时 (服务: {service_name}, 实例ID: {instance_id})")
+        return False
+    except Exception as e:
+        logger.error(f"设置虚拟环境时发生异常 (服务: {service_name}, 实例ID: {instance_id}): {e}")
+        return False
+
+
 class DeployManager:
     def __init__(self):
         self.primary_repo_url = "https://github.com/MaiM-with-u/MaiBot"
         self.secondary_repo_url = "https://gitee.com/DrSmooth/MaiBot"
-        # 服务特定的仓库 URL
-        self.napcat_ada_primary_repo_url = (
-            "https://github.com/MaiM-with-u/MaiBot-Napcat-Adapter"
-        )
-        self.napcat_ada_secondary_repo_url = (
-            "https://gitee.com/DrSmooth/MaiBot-Napcat-Adapter"
-        )
+        
+        # 服务特定的仓库 URL 映射
+        self.service_repos = {
+            "napcat-ada": {
+                "primary": "https://github.com/MaiM-with-u/MaiBot-Napcat-Adapter",
+                "secondary": "https://gitee.com/DrSmooth/MaiBot-Napcat-Adapter",
+                "branch": "main",
+                "template_config": "template_config.toml",
+                "final_config": "config.toml"
+            }
+        }
+        
+        # 保持向后兼容性
+        self.napcat_ada_primary_repo_url = self.service_repos["napcat-ada"]["primary"]
+        self.napcat_ada_secondary_repo_url = self.service_repos["napcat-ada"]["secondary"]
 
-        self.project_root = Path(__file__).resolve().parent.parent.parent
+    def _deploy_service(self, service_config: Dict[str, Any], instance_id: str, resolved_deploy_path: Path) -> bool:
+        """
+        部署单个服务的通用方法。
+        
+        Args:
+            service_config: 服务配置字典
+            instance_id: 实例ID
+            resolved_deploy_path: 主应用部署路径，用于清理时使用
+            
+        Returns:
+            bool: 部署成功返回True，失败返回False
+        """
+        service_name = service_config.get("name")
+        service_path_str = service_config.get("path")
+        
+        if not service_name:
+            logger.error(f"服务配置缺少 'name' 字段 (实例ID: {instance_id})")
+            return False
+            
+        if not service_path_str:
+            logger.error(f"服务 '{service_name}' 配置缺少 'path' 字段 (实例ID: {instance_id})")
+            return False
+            
+        if service_name not in self.service_repos:
+            logger.warning(f"不支持的服务类型: '{service_name}' (实例ID: {instance_id})")
+            logger.info(f"跳过服务 '{service_name}' 的部署 (实例ID: {instance_id})")
+            return True  # 跳过不支持的服务，不视为错误
+            
+        service_deploy_path = Path(service_path_str).resolve()
+        service_repo_info = self.service_repos[service_name]
+        
+        logger.info(f"开始部署服务 '{service_name}' 到: {service_deploy_path} (实例ID: {instance_id})")
+
+        # 克隆服务代码
+        cloned_service_successfully = self._run_git_clone(
+            service_repo_info["primary"], 
+            service_repo_info["branch"], 
+            service_deploy_path
+        )
+        
+        if not cloned_service_successfully:
+            logger.warning(f"从主仓库克隆 '{service_name}' 服务失败，尝试备用仓库 (实例ID: {instance_id})")
+            cloned_service_successfully = self._run_git_clone(
+                service_repo_info["secondary"], 
+                service_repo_info["branch"], 
+                service_deploy_path
+            )
+
+        if not cloned_service_successfully:
+            logger.error(f"从主仓库和备用仓库均克隆 '{service_name}' 服务失败 (实例ID: {instance_id})")
+            if service_deploy_path.exists():
+                shutil.rmtree(service_deploy_path, ignore_errors=True)
+            return False
+
+        logger.info(f"服务 '{service_name}' 代码已成功克隆到 {service_deploy_path} (实例ID: {instance_id})")
+
+        # 复制服务配置文件
+        template_config_name = service_repo_info["template_config"]
+        final_config_name = service_repo_info["final_config"]
+        source_service_config = self.template_dir / template_config_name
+        destination_service_config = service_deploy_path / final_config_name
+
+        try:
+            if not source_service_config.exists():
+                logger.warning(f"服务模板配置文件 {source_service_config} 不存在，跳过配置文件复制 (服务: {service_name}, 实例ID: {instance_id})")
+            else:
+                shutil.copy2(source_service_config, destination_service_config)
+                logger.info(f"成功复制服务配置文件 {source_service_config} 到 {destination_service_config} (实例ID: {instance_id})")
+        except Exception as e:
+            logger.error(f"复制服务配置文件失败: {e} (服务: {service_name}, 实例ID: {instance_id})")
+            if service_deploy_path.exists():
+                shutil.rmtree(service_deploy_path, ignore_errors=True)
+            return False
+        
+        # 设置服务的虚拟环境
+        logger.info(f"开始为服务 '{service_name}' 设置虚拟环境 (实例ID: {instance_id})")
+        venv_success = setup_service_virtual_environment(
+            str(service_deploy_path), service_name, instance_id
+        )
+        if not venv_success:
+            logger.error(f"为服务 '{service_name}' 设置虚拟环境失败 (实例ID: {instance_id})")
+            if service_deploy_path.exists():
+                shutil.rmtree(service_deploy_path, ignore_errors=True)
+            return False
+        
+        logger.info(f"服务 '{service_name}' 部署和虚拟环境设置成功 (实例ID: {instance_id})")
+        return True
 
     def _run_git_clone(
         self, repo_url: str, version_tag: str, deploy_path: Path
@@ -255,9 +478,7 @@ class DeployManager:
                     f"模板 .env 文件 {env_template_file} 不存在 (实例ID: {instance_id})。"
                 )
                 shutil.rmtree(resolved_deploy_path, ignore_errors=True)  # 清理
-                return False  # Added return False based on similar logic above
-
-            shutil.copy2(env_template_file, env_final_file)
+                return False  # Added return False based on similar logic above            shutil.copy2(env_template_file, env_final_file)
             logger.info(
                 f"成功复制 {env_template_file} 到 {env_final_file} (实例ID: {instance_id})"
             )
@@ -270,89 +491,27 @@ class DeployManager:
 
         logger.info(f"主应用文件部署完成 (实例ID: {instance_id})。开始处理服务部署...")
 
-        # 服务部署逻辑
-        found_napcat_ada = False
-        napcat_ada_service_config = None
-
+        # 服务部署逻辑 - 使用通用方法处理所有服务
+        services_deployed = 0
+        total_services = len(services_to_install)
+        
         for service_config in services_to_install:
-            if service_config.get("name") == "napcat-ada":
-                found_napcat_ada = True
-                napcat_ada_service_config = service_config
-                break
-
-        if found_napcat_ada and napcat_ada_service_config:
-            logger.info(f"找到服务 'napcat-ada'，开始为其部署。(实例ID: {instance_id})")
-            service_path_str = napcat_ada_service_config.get("path")
-            if not service_path_str:
-                logger.error(
-                    f"'napcat-ada' 服务配置缺少 'path'。(实例ID: {instance_id})"
-                )
-                shutil.rmtree(resolved_deploy_path, ignore_errors=True)  # 清理主路径
-                return False
-
-            service_deploy_path = Path(service_path_str).resolve()
-            logger.info(
-                f"服务 'napcat-ada' 将部署到: {service_deploy_path} (实例ID: {instance_id})"
-            )
-
-            # 克隆服务代码 - 使用 "main" 分支
-            cloned_service_successfully = self._run_git_clone(
-                self.napcat_ada_primary_repo_url, "main", service_deploy_path
-            )
-            if not cloned_service_successfully:
-                logger.warning(
-                    f"从主仓库克隆 'napcat-ada' 服务失败。尝试备用仓库。(实例ID: {instance_id})"
-                )
-                cloned_service_successfully = self._run_git_clone(
-                    self.napcat_ada_secondary_repo_url, "main", service_deploy_path
-                )
-
-            if not cloned_service_successfully:
-                logger.error(
-                    f"从主仓库和备用仓库均克隆 'napcat-ada' 服务失败。(实例ID: {instance_id})"
-                )
-                if service_deploy_path.exists():  # 清理服务路径
-                    shutil.rmtree(service_deploy_path, ignore_errors=True)
-                shutil.rmtree(resolved_deploy_path, ignore_errors=True)  # 清理主路径
-                return False
-
-            logger.info(
-                f"'napcat-ada' 服务代码已成功克隆到 {service_deploy_path} (实例ID: {instance_id})"
-            )
-
-            # 复制服务配置文件
-            service_template_name = "template_config.toml"  # 根据用户要求
-            service_final_name = "config.toml"
-            source_service_config = self.template_dir / service_template_name
-            destination_service_config = service_deploy_path / service_final_name
-
-            try:
-                if not source_service_config.exists():
-                    logger.error(
-                        f"服务模板配置文件 {source_service_config} 不存在。(实例ID: {instance_id})"
-                    )
-                    if service_deploy_path.exists():
-                        shutil.rmtree(service_deploy_path, ignore_errors=True)
-                    shutil.rmtree(resolved_deploy_path, ignore_errors=True)
-                    return False
-                shutil.copy2(source_service_config, destination_service_config)
-                logger.info(
-                    f"成功复制服务配置文件 {source_service_config} 到 {destination_service_config} (实例ID: {instance_id})"
-                )
-            except Exception as e:
-                logger.error(
-                    f"复制服务配置文件 {source_service_config} 到 {destination_service_config} 失败: {e} (实例ID: {instance_id})"
-                )
-                if service_deploy_path.exists():
-                    shutil.rmtree(service_deploy_path, ignore_errors=True)
+            service_name = service_config.get("name", "unknown")
+            logger.info(f"正在部署服务 '{service_name}' ({services_deployed + 1}/{total_services}) (实例ID: {instance_id})")
+            
+            service_success = self._deploy_service(service_config, instance_id, resolved_deploy_path)
+            if not service_success:
+                logger.error(f"服务 '{service_name}' 部署失败，终止整个部署过程 (实例ID: {instance_id})")
                 shutil.rmtree(resolved_deploy_path, ignore_errors=True)
                 return False
-            logger.info(f"'napcat-ada' 服务部署成功。(实例ID: {instance_id})")
-        elif not found_napcat_ada:
-            logger.info(
-                f"未在安装列表中找到 'napcat-ada' 服务，跳过服务部署步骤。(实例ID: {instance_id})"
-            )
-        # 如果 found_napcat_ada 为 True 但 napcat_ada_service_config 为 None (例如 path 缺失)，则已在上面处理
+            
+            services_deployed += 1
+            logger.info(f"服务 '{service_name}' 部署完成 ({services_deployed}/{total_services}) (实例ID: {instance_id})")
+
+        if total_services == 0:
+            logger.info(f"未指定要部署的服务，跳过服务部署步骤 (实例ID: {instance_id})")
+        else:
+            logger.info(f"所有服务 ({services_deployed}/{total_services}) 部署完成 (实例ID: {instance_id})")
 
         logger.info(
             f"版本 {version_tag} 及所选服务已成功部署到 {resolved_deploy_path} (实例ID: {instance_id})"
