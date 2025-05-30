@@ -272,7 +272,7 @@ async def get_available_versions() -> AvailableVersionsResponse:
         async with httpx.AsyncClient() as client:
             response: httpx.Response = await client.get(url)
             response.raise_for_status()
-            tags_data: List[Dict[str, Any]] = response.json()            
+            tags_data: List[Dict[str, Any]] = response.json()
             versions: List[str] = [
                 tag["name"]
                 for tag in tags_data
