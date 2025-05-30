@@ -356,7 +356,8 @@ class DeployManager:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                shell=False,                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                shell=False,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
             stdout, stderr = process.communicate(timeout=300)
             logger.info(f"Git clone 命令执行完毕。返回码: {process.returncode}")
