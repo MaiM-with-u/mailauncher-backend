@@ -766,7 +766,7 @@ def generate_venv_command(base_command: str, working_directory: str) -> str:
     if not venv_path.exists():
         logger.warning(f"虚拟环境不存在于 {venv_path}，将使用原始命令")
         return base_command
-    
+
     # 检查虚拟环境是否为目录
     if not venv_path.is_dir():
         logger.warning(f"虚拟环境路径 {venv_path} 不是目录，将使用原始命令")
@@ -784,19 +784,23 @@ def generate_venv_command(base_command: str, working_directory: str) -> str:
                     capture_output=True,
                     text=True,
                     timeout=10,
-                    creationflags=subprocess.CREATE_NO_WINDOW
+                    creationflags=subprocess.CREATE_NO_WINDOW,
                 )
                 if test_result.returncode != 0:
                     logger.warning(
                         f"虚拟环境Python可执行文件 {venv_python} 无法正常运行，将使用原始命令"
                     )
                     return base_command
-            except (subprocess.TimeoutExpired, subprocess.SubprocessError, OSError) as e:
+            except (
+                subprocess.TimeoutExpired,
+                subprocess.SubprocessError,
+                OSError,
+            ) as e:
                 logger.warning(
                     f"测试虚拟环境Python可执行文件 {venv_python} 时出错: {e}，将使用原始命令"
                 )
                 return base_command
-            
+
             # 直接使用虚拟环境中的Python可执行文件
             # 替换命令中的 "python" 为虚拟环境中的python路径，并添加引号
             if base_command.startswith("python "):
@@ -830,19 +834,23 @@ def generate_venv_command(base_command: str, working_directory: str) -> str:
                     [str(venv_python), "--version"],
                     capture_output=True,
                     text=True,
-                    timeout=10
+                    timeout=10,
                 )
                 if test_result.returncode != 0:
                     logger.warning(
                         f"虚拟环境Python可执行文件 {venv_python} 无法正常运行，将使用原始命令"
                     )
                     return base_command
-            except (subprocess.TimeoutExpired, subprocess.SubprocessError, OSError) as e:
+            except (
+                subprocess.TimeoutExpired,
+                subprocess.SubprocessError,
+                OSError,
+            ) as e:
                 logger.warning(
                     f"测试虚拟环境Python可执行文件 {venv_python} 时出错: {e}，将使用原始命令"
                 )
                 return base_command
-            
+
             # 直接使用虚拟环境中的Python可执行文件
             if base_command.startswith("python "):
                 venv_command = str(venv_python) + base_command[6:]  # 去掉 "python"
@@ -852,7 +860,9 @@ def generate_venv_command(base_command: str, working_directory: str) -> str:
                 # 如果命令不是以python开头，使用激活脚本的方式
                 activate_script = venv_path / "bin" / "activate"
                 if activate_script.exists():
-                    venv_command = f'bash -c "source {activate_script} && {base_command}"'
+                    venv_command = (
+                        f'bash -c "source {activate_script} && {base_command}"'
+                    )
                 else:
                     logger.warning(
                         f"虚拟环境激活脚本 {activate_script} 不存在，将使用原始命令"
