@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Body
+from fastapi import APIRouter, HTTPException, Body, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any  # Add Dict and Any for type hinting
 from src.modules.instance_manager import (
@@ -21,6 +21,7 @@ import subprocess
 import sys
 import os
 import threading
+import asyncio
 from datetime import datetime
 
 logger = get_module_logger("部署API")  # 修改 logger 名称
@@ -204,7 +205,7 @@ def get_cached_install_status(instance_id: str) -> Dict:
 
 
 @router.post("/deploy", response_model=DeployResponse)  # 修改路径为 /deploy
-async def deploy_maibot(payload: DeployRequest = Body(...)):
+async def deploy_maibot(payload: DeployRequest = Body(...), background_tasks: BackgroundTasks = None):
     """
     部署指定版本的 MaiBot。
     """
@@ -232,132 +233,23 @@ async def deploy_maibot(payload: DeployRequest = Body(...)):
                 detail=f"实例 '{payload.instance_name}' (ID: {instance_id_str}) 已存在。",
             )
 
-        # 更新进度：开始部署
-        update_install_status(
-            instance_id_str, "installing", 10, "正在下载并部署 MaiBot..."
+    # 将部署过程添加到后台任务
+    if background_tasks:
+        background_tasks.add_task(
+            perform_deployment_background, 
+            payload, 
+            instance_id_str
         )
-
-        # 使用 deploy_manager 执行实际部署操作
-        # 将 payload.install_path 替换为 instance_id_str
-        # 并且传入 payload.install_services
-        deploy_path = Path(payload.install_path)  # Create Path object for deploy_path
-        deploy_success = deploy_manager.deploy_version(
-            payload.version,
-            deploy_path,  # Pass deploy_path directly
-            instance_id_str,
-            [
-                service.model_dump() for service in payload.install_services
-            ],  # 将Pydantic模型转换为字典列表
-        )
-
-        if not deploy_success:
-            logger.error(
-                f"使用 deploy_manager 部署版本 {payload.version} 到实例 {instance_id_str} 失败。"
-            )
-            update_install_status(instance_id_str, "failed", 0, "MaiBot 部署失败")
-            # 注意：deploy_version 内部应该已经处理了部分创建文件的清理工作
-            raise HTTPException(
-                status_code=500,
-                detail=f"部署 MaiBot 版本 {payload.version} 失败。请查看日志了解详情。",
-            )
-
-        logger.info(
-            f"版本 {payload.version} 已成功部署到 {payload.install_path}。现在设置虚拟环境..."
-        )
-
-        # 更新进度：部署完成，开始设置环境
-        update_install_status(
-            instance_id_str, "installing", 40, "MaiBot 部署完成，正在设置虚拟环境..."
-        )
-
-        # 设置虚拟环境并安装依赖
-        venv_success = await setup_virtual_environment(
-            payload.install_path, instance_id_str
-        )
-        if not venv_success:
-            logger.error(f"为实例 {instance_id_str} 设置虚拟环境失败")
-            update_install_status(instance_id_str, "failed", 40, "虚拟环境设置失败")
-            raise HTTPException(
-                status_code=500,
-                detail="设置虚拟环境失败。请查看日志了解详情。",
-            )
-
-        logger.info("虚拟环境设置成功。现在记录到数据库...")
-
-        # 更新进度：虚拟环境设置完成
-        update_install_status(
-            instance_id_str, "installing", 80, "虚拟环境设置完成，正在保存实例信息..."
-        )
-
-        try:
-            new_instance_obj = instance_manager.create_instance(
-                name=payload.instance_name,
-                version=payload.version,
-                path=payload.install_path,
-                status=InstanceStatus.STARTING,
-                port=payload.port,
-                instance_id=instance_id_str,
-                db_session=session,
-            )
-
-            if not new_instance_obj:
-                logger.error(
-                    f"通过 InstanceManager 创建实例 {payload.instance_name} (ID: {instance_id_str}) 失败，但未引发异常。"
-                )
-                update_install_status(instance_id_str, "failed", 80, "实例信息保存失败")
-                raise HTTPException(
-                    status_code=500, detail="实例信息保存失败，请查看日志了解详情。"
-                )
-
-            # 初始化服务状态
-            services_status = []
-            for service_config in payload.install_services:
-                db_service = Services(
-                    instance_id=instance_id_str,
-                    name=service_config.name,
-                    path=service_config.path,
-                    status="pending",
-                    port=service_config.port,
-                    run_cmd=service_config.run_cmd,  # 添加 run_cmd
-                )
-                session.add(db_service)
-
-                # 添加到服务状态列表
-                services_status.append(
-                    {
-                        "name": service_config.name,
-                        "status": "pending",
-                        "progress": 0,
-                        "message": "等待安装",
-                    }
-                )
-
-            session.commit()
-
-            # 更新进度：完成部署
-            update_install_status(
-                instance_id_str, "completed", 100, "部署完成！", services_status
-            )
-
-        except IntegrityError as e:
-            session.rollback()
-            logger.error(
-                f"部署实例 {payload.instance_name} 时发生数据库完整性错误: {e}"
-            )
-            update_install_status(instance_id_str, "failed", 80, f"数据库错误: {e}")
-            raise HTTPException(status_code=409, detail=f"保存部署信息时发生冲突: {e}")
-        except Exception as e:
-            session.rollback()
-            logger.error(f"部署实例 {payload.instance_name} 期间发生意外错误: {e}")
-            update_install_status(instance_id_str, "failed", 80, f"内部错误: {e}")
-            raise HTTPException(status_code=500, detail=f"处理部署时发生内部错误: {e}")
+    else:
+        # 如果没有 background_tasks（例如在测试中），创建一个异步任务
+        asyncio.create_task(perform_deployment_background(payload, instance_id_str))
 
     logger.info(
-        f"实例 {payload.instance_name} (ID: {instance_id_str}) 及关联服务已成功记录到数据库。"
+        f"实例 {payload.instance_name} (ID: {instance_id_str}) 部署任务已启动。"
     )
     return DeployResponse(
         success=True,
-        message=f"MaiBot 版本 {payload.version} 的实例 {payload.instance_name} 部署任务已启动并记录。",
+        message=f"MaiBot 版本 {payload.version} 的实例 {payload.instance_name} 部署任务已启动。",
         instance_id=instance_id_str,
     )
 
@@ -492,9 +384,142 @@ async def get_install_status(instance_id: str):
     )
 
 
-async def setup_virtual_environment(install_path: str, instance_id: str) -> bool:
+async def perform_deployment_background(payload: DeployRequest, instance_id_str: str):
     """
-    在指定的安装目录中设置虚拟环境并安装依赖。
+    在后台执行部署任务的异步函数
+    """
+    try:
+        # 更新进度：开始部署
+        update_install_status(
+            instance_id_str, "installing", 10, "正在下载并部署 MaiBot..."
+        )
+
+        # 使用 deploy_manager 执行实际部署操作
+        # 将 payload.install_path 替换为 instance_id_str
+        # 并且传入 payload.install_services
+        deploy_path = Path(payload.install_path)  # Create Path object for deploy_path
+        
+        # 在线程池中执行同步的部署操作，避免阻塞事件循环
+        loop = asyncio.get_event_loop()
+        deploy_success = await loop.run_in_executor(
+            None,
+            deploy_manager.deploy_version,
+            payload.version,
+            deploy_path,
+            instance_id_str,
+            [service.model_dump() for service in payload.install_services]
+        )
+
+        if not deploy_success:
+            logger.error(
+                f"使用 deploy_manager 部署版本 {payload.version} 到实例 {instance_id_str} 失败。"
+            )
+            update_install_status(instance_id_str, "failed", 0, "MaiBot 部署失败")
+            return
+
+        logger.info(
+            f"版本 {payload.version} 已成功部署到 {payload.install_path}。现在设置虚拟环境..."
+        )
+
+        # 更新进度：部署完成，开始设置环境
+        update_install_status(
+            instance_id_str, "installing", 40, "MaiBot 部署完成，正在设置虚拟环境..."
+        )
+
+        # 设置虚拟环境并安装依赖
+        venv_success = await setup_virtual_environment_background(
+            payload.install_path, instance_id_str
+        )
+        if not venv_success:
+            logger.error(f"为实例 {instance_id_str} 设置虚拟环境失败")
+            update_install_status(instance_id_str, "failed", 40, "虚拟环境设置失败")
+            return
+
+        logger.info("虚拟环境设置成功。现在记录到数据库...")
+
+        # 更新进度：虚拟环境设置完成
+        update_install_status(
+            instance_id_str, "installing", 80, "虚拟环境设置完成，正在保存实例信息..."
+        )
+
+        # 在数据库中保存实例信息
+        await save_instance_to_database(payload, instance_id_str)
+
+    except Exception as e:
+        logger.error(f"后台部署任务发生异常 (实例ID: {instance_id_str}): {e}")
+        update_install_status(instance_id_str, "failed", 0, f"部署失败: {str(e)}")
+
+
+async def save_instance_to_database(payload: DeployRequest, instance_id_str: str):
+    """
+    将实例信息保存到数据库
+    """
+    try:
+        with Session(engine) as session:
+            new_instance_obj = instance_manager.create_instance(
+                name=payload.instance_name,
+                version=payload.version,
+                path=payload.install_path,
+                status=InstanceStatus.STARTING,
+                port=payload.port,
+                instance_id=instance_id_str,
+                db_session=session,
+            )
+
+            if not new_instance_obj:
+                logger.error(
+                    f"通过 InstanceManager 创建实例 {payload.instance_name} (ID: {instance_id_str}) 失败，但未引发异常。"
+                )
+                update_install_status(instance_id_str, "failed", 80, "实例信息保存失败")
+                return
+
+            # 初始化服务状态
+            services_status = []
+            for service_config in payload.install_services:
+                db_service = Services(
+                    instance_id=instance_id_str,
+                    name=service_config.name,
+                    path=service_config.path,
+                    status="pending",
+                    port=service_config.port,
+                    run_cmd=service_config.run_cmd,  # 添加 run_cmd
+                )
+                session.add(db_service)
+
+                # 添加到服务状态列表
+                services_status.append(
+                    {
+                        "name": service_config.name,
+                        "status": "pending",
+                        "progress": 0,
+                        "message": "等待安装",
+                    }
+                )
+
+            session.commit()
+
+            # 更新进度：完成部署
+            update_install_status(
+                instance_id_str, "completed", 100, "部署完成！", services_status
+            )
+
+            logger.info(
+                f"实例 {payload.instance_name} (ID: {instance_id_str}) 及关联服务已成功记录到数据库。"
+            )
+
+    except IntegrityError as e:
+        logger.error(
+            f"部署实例 {payload.instance_name} 时发生数据库完整性错误: {e}"
+        )
+        update_install_status(instance_id_str, "failed", 80, f"数据库错误: {e}")
+    except Exception as e:
+        logger.error(f"部署实例 {payload.instance_name} 期间发生意外错误: {e}")
+        update_install_status(instance_id_str, "failed", 80, f"内部错误: {e}")
+
+
+async def setup_virtual_environment_background(install_path: str, instance_id: str) -> bool:
+    """
+    在后台线程中设置虚拟环境并安装依赖的异步版本
 
     Args:
         install_path: 安装目录路径
@@ -525,13 +550,18 @@ async def setup_virtual_environment(install_path: str, instance_id: str) -> bool
         logger.info(f"创建虚拟环境 {venv_path} (实例ID: {instance_id})")
         create_venv_cmd = [sys.executable, "-m", "venv", str(venv_path)]
 
-        result = subprocess.run(
-            create_venv_cmd,
-            cwd=str(install_dir),
-            capture_output=True,
-            text=True,
-            timeout=300,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        # 在线程池中执行虚拟环境创建，避免阻塞事件循环
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(
+                create_venv_cmd,
+                cwd=str(install_dir),
+                capture_output=True,
+                text=True,
+                timeout=300,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
         )
 
         if result.returncode != 0:
@@ -583,13 +613,16 @@ async def setup_virtual_environment(install_path: str, instance_id: str) -> bool
             "pip",
         ]
 
-        result = subprocess.run(
-            upgrade_pip_cmd,
-            cwd=str(install_dir),
-            capture_output=True,
-            text=True,
-            timeout=300,
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        result = await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(
+                upgrade_pip_cmd,
+                cwd=str(install_dir),
+                capture_output=True,
+                text=True,
+                timeout=300,
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
         )
 
         if result.returncode != 0:
@@ -615,13 +648,16 @@ async def setup_virtual_environment(install_path: str, instance_id: str) -> bool
             f"执行依赖安装命令: {' '.join(install_deps_cmd)} (实例ID: {instance_id})"
         )
 
-        result = subprocess.run(
-            install_deps_cmd,
-            cwd=str(install_dir),
-            capture_output=True,
-            text=True,
-            timeout=600,  # 依赖安装可能需要更长时间
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+        result = await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(
+                install_deps_cmd,
+                cwd=str(install_dir),
+                capture_output=True,
+                text=True,
+                timeout=600,  # 依赖安装可能需要更长时间
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+            )
         )
 
         if result.returncode != 0:
@@ -637,10 +673,6 @@ async def setup_virtual_environment(install_path: str, instance_id: str) -> bool
 
         return True
 
-    except subprocess.TimeoutExpired:
-        logger.error(f"虚拟环境设置超时 (实例ID: {instance_id})")
-        update_install_status(instance_id, "failed", 45, "虚拟环境设置超时")
-        return False
     except Exception as e:
         logger.error(f"设置虚拟环境时发生异常 (实例ID: {instance_id}): {e}")
         update_install_status(instance_id, "failed", 45, f"虚拟环境设置异常: {str(e)}")
