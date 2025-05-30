@@ -10,6 +10,37 @@ router = APIRouter()
 logger = get_module_logger("系统API")  # 初始化 logger
 
 
+def get_cpu_name():
+    """
+    获取准确的CPU名称，支持Windows、Linux和macOS
+    """
+    if platform.system() == "Windows":
+        try:
+            import wmi
+            c = wmi.WMI()
+            for processor in c.Win32_Processor():
+                return processor.Name
+        except ImportError:
+            logger.warning("请安装 pywin32 和 wmi 库以获取 Windows CPU 名称：pip install pywin32 wmi")
+            return "无法获取 CPU 名称 (Windows)"
+    elif platform.system() == "Linux":
+        try:
+            with open("/proc/cpuinfo", "r") as f:
+                for line in f:
+                    if "model name" in line:
+                        return line.split(":")[1].strip()
+        except FileNotFoundError:
+            return "无法获取 CPU 名称 (/proc/cpuinfo 未找到)"
+    elif platform.system() == "Darwin":  # macOS
+        try:
+            import subprocess
+            return subprocess.check_output(["sysctl", "-n", "machdep.cpu.brand_string"]).decode().strip()
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return "无法获取 CPU 名称 (sysctl 命令出错或未找到)"
+    else:
+        return "不支持的操作系统"
+
+
 class HealthCheckResponse(BaseModel):
     status: str
     time: str
@@ -91,14 +122,13 @@ async def get_system_metrics():
     logger.info("收到获取系统性能指标请求")  # 添加日志
     # System Info
     uname = platform.uname()
+    cpu_name = get_cpu_name()  # 使用新的CPU名称获取函数
     system_info = SystemInfo(
         system=uname.system,
         release=uname.release,
         version=uname.version,
         machine=uname.machine,
-        processor=uname.processor
-        if hasattr(uname, "processor")
-        else "N/A",  # uname.processor might not be available on all systems
+        processor=cpu_name,  # 使用准确的CPU名称
     )
 
     # Python Version
