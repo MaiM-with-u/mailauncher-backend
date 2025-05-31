@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 import asyncio
 import os
+import re
 import shlex
 import shutil
 from src.modules.instance_manager import (
@@ -146,53 +147,55 @@ async def _start_pty_process(
             logger.info(f"检测到虚拟环境 Python 路径: {python_exe_path}")
 
             # 验证文件是否存在
-            from pathlib import Path
-
+            from pathlib import Path            
             if not Path(python_exe_path).exists():
                 logger.warning(f"虚拟环境 Python 文件不存在: {python_exe_path}")
                 logger.warning("这可能导致 PTY 启动失败")
             else:
                 logger.info(f"虚拟环境 Python 文件存在且可访问: {python_exe_path}")
-
+    
+    # 首先检查是否有现有的PTY进程
+    existing_pty_info = None
     async with active_ptys_lock:
-        if (
-            session_id in active_ptys
-            and active_ptys[session_id].get("pty")
-            and active_ptys[session_id]["pty"].isalive()
-        ):
-            # 虚拟终端已存在
-            pty_info = active_ptys[session_id]
+        if session_id in active_ptys:
+            existing_pty_info = active_ptys[session_id].copy()  # 复制数据以避免在锁外访问
 
-            # 检查是否已经启动了命令
-            if pty_info.get("command_started", False):
-                logger.info(f"会话 {session_id} 的命令已在运行。")
-                return True
+    if (existing_pty_info 
+        and existing_pty_info.get("pty") 
+        and existing_pty_info["pty"].isalive()):
+        
+        # 检查是否已经启动了命令
+        if existing_pty_info.get("command_started", False):
+            logger.info(f"会话 {session_id} 的命令已在运行。")
+            return True
 
-            # 向现有的虚拟终端发送启动命令
-            pty_process = pty_info["pty"]
+        # 向现有的虚拟终端发送启动命令
+        pty_process = existing_pty_info["pty"]
 
-            try:
-                # 切换到正确的工作目录
-                if pty_cwd and pty_cwd != pty_info.get("working_directory"):
-                    cd_command = f'cd /d "{pty_cwd}"\r\n'
-                    pty_process.write(cd_command)
-                    logger.info(f"已切换到工作目录: {pty_cwd}")
+        try:
+            # 切换到正确的工作目录
+            if pty_cwd and pty_cwd != existing_pty_info.get("working_directory"):
+                cd_command = f'cd /d "{pty_cwd}"\r\n'
+                pty_process.write(cd_command)
+                logger.info(f"已切换到工作目录: {pty_cwd}")
 
-                # 发送启动命令
-                start_command = f"{pty_command_str}\r\n"
-                pty_process.write(start_command)
+            # 发送启动命令
+            start_command = f"{pty_command_str}\r\n"
+            pty_process.write(start_command)
 
-                # 标记命令已启动
-                pty_info["command_started"] = True
-                pty_info["working_directory"] = pty_cwd
+            # 使用单独的锁操作来更新状态
+            async with active_ptys_lock:
+                if session_id in active_ptys:
+                    active_ptys[session_id]["command_started"] = True
+                    active_ptys[session_id]["working_directory"] = pty_cwd
 
-                logger.info(
-                    f"已向现有虚拟终端发送启动命令 (会话: {session_id}): {pty_command_str}"
-                )
-                return True
-            except Exception as e:
-                logger.error(f"向会话 {session_id} 的虚拟终端发送命令失败: {e}")
-                return False
+            logger.info(
+                f"已向现有虚拟终端发送启动命令 (会话: {session_id}): {pty_command_str}"
+            )
+            return True
+        except Exception as e:
+            logger.error(f"向会话 {session_id} 的虚拟终端发送命令失败: {e}")
+            return False
                 # 如果虚拟终端不存在，创建新的 PTY 进程（直接执行命令）
     try:
         # 为 PtyProcess.spawn 准备命令
@@ -289,11 +292,10 @@ async def _start_pty_process(
                     logger.error(f"cmd.exe 备用策略也失败: {cmd_error}")
                     raise spawn_error  # 抛出原始错误
             else:
-                raise spawn_error  # 非 Windows 系统直接抛出错误
-
-        if not pty_process:
+                raise spawn_error  # 非 Windows 系统直接抛出错误        if not pty_process:
             raise Exception("无法创建 PTY 进程")
 
+        # 使用单独的锁操作来添加新的PTY
         async with active_ptys_lock:
             active_ptys[session_id] = {
                 "pty": pty_process,

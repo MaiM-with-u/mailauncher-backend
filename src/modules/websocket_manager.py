@@ -231,77 +231,82 @@ async def handle_websocket_connection(
     pty_process: Optional[PtyProcess] = None
     read_task: Optional[asyncio.Task] = None
 
-    try:
-        # 检查是否已经有活跃的 PTY 进程
+    try:        # 检查是否已经有活跃的 PTY 进程
+        existing_pty_info = None
         async with active_ptys_lock:
             if (
                 session_id in active_ptys
                 and active_ptys[session_id].get("pty")
                 and active_ptys[session_id]["pty"].isalive()
             ):
-                # PTY 已存在，直接连接到现有进程
-                pty_info = active_ptys[session_id]
-                pty_process = pty_info["pty"]
+                existing_pty_info = active_ptys[session_id]
 
-                # 更新 WebSocket 连接
-                pty_info["ws"] = websocket
+        if existing_pty_info:
+            # PTY 已存在，直接连接到现有进程
+            pty_process = existing_pty_info["pty"]
 
-                logger.info(f"连接到现有的 PTY 进程 (会话: {session_id})")
+            # 更新 WebSocket 连接（在锁外更新）
+            async with active_ptys_lock:
+                if session_id in active_ptys:
+                    active_ptys[session_id]["ws"] = websocket
 
-                # 如果 PTY 已经在运行命令，启动输出读取任务
-                if pty_info.get("command_started", False):
-                    read_task = asyncio.create_task(
-                        pty_output_to_websocket(session_id, pty_process, websocket, db)
-                    )
-                    pty_info["output_task"] = read_task
-            else:
-                # 创建新的虚拟终端，但不执行命令
-                logger.info(f"为会话 {session_id} 创建虚拟终端 (不执行命令)")
+            logger.info(f"连接到现有的 PTY 进程 (会话: {session_id})")
 
-                # 获取工作目录
-                pty_cwd = None
-                if type_part == "main":
-                    pty_cwd = instance.path
-                else:
-                    # 对于服务，从数据库获取服务详情
-                    service_details = await db.get_service_details(
-                        instance_short_id, type_part
-                    )
-                    if service_details and service_details.path:
-                        pty_cwd = service_details.path
-                    else:
-                        pty_cwd = instance.path  # 回退到实例路径
-
-                # 创建空的 PTY 进程（使用 cmd 作为默认 shell）
-                pty_process = PtyProcess.spawn(
-                    ["cmd.exe"],  # 使用 Windows cmd 作为默认 shell
-                    dimensions=(PTY_ROWS_DEFAULT, PTY_COLS_DEFAULT),
-                    cwd=pty_cwd,
-                )
-                logger.info(
-                    f"虚拟终端已创建 (会话: {session_id}, PID: {pty_process.pid})"
-                )
-
-                # 保存到 active_ptys，标记为未开始命令
-                async with active_ptys_lock:
-                    active_ptys[session_id] = {
-                        "pty": pty_process,
-                        "ws": websocket,
-                        "output_task": None,
-                        "instance_part": instance_short_id,
-                        "type_part": type_part,
-                        "command_started": False,  # 标记命令尚未开始
-                        "working_directory": pty_cwd,
-                    }
-
-                # 启动输出读取任务（用于显示 shell 提示符）
+            # 如果 PTY 已经在运行命令，启动输出读取任务
+            if existing_pty_info.get("command_started", False):
                 read_task = asyncio.create_task(
                     pty_output_to_websocket(session_id, pty_process, websocket, db)
                 )
-
                 async with active_ptys_lock:
                     if session_id in active_ptys:
                         active_ptys[session_id]["output_task"] = read_task
+        else:
+            # 创建新的虚拟终端，但不执行命令
+            logger.info(f"为会话 {session_id} 创建虚拟终端 (不执行命令)")
+
+            # 获取工作目录
+            pty_cwd = None
+            if type_part == "main":
+                pty_cwd = instance.path
+            else:
+                # 对于服务，从数据库获取服务详情
+                service_details = await db.get_service_details(
+                    instance_short_id, type_part
+                )
+                if service_details and service_details.path:
+                    pty_cwd = service_details.path
+                else:
+                    pty_cwd = instance.path  # 回退到实例路径
+
+            # 创建空的 PTY 进程（使用 cmd 作为默认 shell）
+            pty_process = PtyProcess.spawn(
+                ["cmd.exe"],  # 使用 Windows cmd 作为默认 shell
+                dimensions=(PTY_ROWS_DEFAULT, PTY_COLS_DEFAULT),
+                cwd=pty_cwd,
+            )
+            logger.info(
+                f"虚拟终端已创建 (会话: {session_id}, PID: {pty_process.pid})"
+            )            # 保存到 active_ptys，标记为未开始命令
+            async with active_ptys_lock:
+                active_ptys[session_id] = {
+                    "pty": pty_process,
+                    "ws": websocket,
+                    "output_task": None,
+                    "instance_part": instance_short_id,
+                    "type_part": type_part,
+                    "command_started": False,  # 标记命令尚未开始
+                    "working_directory": pty_cwd,
+                }
+
+            # 启动输出读取任务（用于显示 shell 提示符）
+            read_task = asyncio.create_task(
+                pty_output_to_websocket(session_id, pty_process, websocket, db)
+            )
+
+            # 更新输出任务（使用单独的锁操作）
+            async with active_ptys_lock:
+                if session_id in active_ptys:
+                    active_ptys[session_id]["output_task"] = read_task
 
         if not pty_process:
             err_msg = f"无法创建虚拟终端 (会话: {session_id})"
