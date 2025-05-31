@@ -15,10 +15,9 @@ from src.utils.database import engine
 from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 import httpx
-from src.tools.deploy_version import deploy_manager  # 导入部署管理器
+from src.tools.deploy_version import deploy_manager, get_python_executable  # 导入部署管理器和Python路径检测器
 from pathlib import Path  # Add Path import
 import subprocess
-import sys
 import os
 import threading
 import asyncio
@@ -627,11 +626,19 @@ async def setup_virtual_environment_background(
         # 更新状态：开始创建虚拟环境
         update_install_status(
             instance_id, "installing", 50, "正在创建 Python 虚拟环境..."
-        )
-
-        # 1. 创建虚拟环境
+        )        # 1. 创建虚拟环境
         logger.info(f"创建虚拟环境 {venv_path} (实例ID: {instance_id})")
-        create_venv_cmd = [sys.executable, "-m", "venv", str(venv_path)]
+        
+        # 获取正确的Python解释器路径
+        try:
+            python_executable = get_python_executable()
+        except RuntimeError as e:
+            logger.error(f"获取Python解释器失败 (实例ID: {instance_id}): {e}")
+            update_install_status(instance_id, "failed", 50, f"Python解释器获取失败: {str(e)}")
+            return False
+        
+        logger.info(f"使用Python解释器: {python_executable} (实例ID: {instance_id})")
+        create_venv_cmd = [python_executable, "-m", "venv", str(venv_path)]
 
         # 在线程池中执行虚拟环境创建，避免阻塞事件循环
         loop = asyncio.get_event_loop()
