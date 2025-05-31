@@ -15,6 +15,160 @@ from typing import List, Dict, Any
 logger = get_module_logger("版本部署工具")
 
 
+def get_python_executable() -> str:
+    """
+    获取正确的Python解释器路径，处理PyInstaller打包环境。
+    
+    Returns:
+        str: Python解释器的路径
+    """
+    # 检测是否在PyInstaller打包的环境中运行
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        logger.info("检测到PyInstaller环境，寻找系统Python解释器...")
+        
+        # 尝试常见的Python安装路径
+        potential_paths = [
+            # Python Launcher
+            "py",
+            "python",
+            "python3",
+            # 常见安装路径
+            r"C:\Python312\python.exe",
+            r"C:\Python311\python.exe",
+            r"C:\Python310\python.exe",
+            r"C:\Python39\python.exe",
+            r"C:\Python38\python.exe",
+            # AppData Local 路径
+            os.path.expanduser(r"~\AppData\Local\Programs\Python\Python312\python.exe"),
+            os.path.expanduser(r"~\AppData\Local\Programs\Python\Python311\python.exe"),
+            os.path.expanduser(r"~\AppData\Local\Programs\Python\Python310\python.exe"),
+            # Program Files 路径
+            r"C:\Program Files\Python312\python.exe",
+            r"C:\Program Files\Python311\python.exe",
+            r"C:\Program Files\Python310\python.exe",
+        ]
+        
+        for python_path in potential_paths:
+            try:
+                # 测试Python解释器是否可用
+                result = subprocess.run(
+                    [python_path, "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                )
+                if result.returncode == 0:
+                    logger.info(f"找到可用的Python解释器: {python_path}")
+                    logger.info(f"Python版本: {result.stdout.strip()}")
+                    return python_path
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+                continue
+        
+        # 如果都不行，尝试使用whereis或where命令查找
+        try:
+            if os.name == "nt":
+                result = subprocess.run(
+                    ["where", "python"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+            else:
+                result = subprocess.run(
+                    ["which", "python3"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+            
+            if result.returncode == 0:
+                python_path = result.stdout.strip().split('\n')[0]
+                logger.info(f"通过系统命令找到Python解释器: {python_path}")
+                return python_path
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            pass
+        
+        logger.error("在PyInstaller环境中未能找到可用的Python解释器")
+        raise RuntimeError("未能找到可用的Python解释器。请确保Python已正确安装并添加到系统PATH。")
+    else:
+        # 非PyInstaller环境，使用sys.executable
+        logger.info(f"使用当前Python解释器: {sys.executable}")
+        return sys.executable
+
+
+def get_git_executable() -> str:
+    """
+    获取正确的Git可执行文件路径，处理PyInstaller打包环境。
+    
+    Returns:
+        str: Git可执行文件的路径
+    """
+    # 检测是否在PyInstaller打包的环境中运行
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        logger.info("检测到PyInstaller环境，寻找系统Git...")
+        
+        # 尝试常见的Git安装路径
+        potential_paths = [
+            "git",  # 系统PATH中的git
+            r"C:\Program Files\Git\bin\git.exe",
+            r"C:\Program Files (x86)\Git\bin\git.exe",
+            r"C:\Git\bin\git.exe",
+            # 便携版Git路径
+            r"C:\PortableGit\bin\git.exe",
+        ]
+        
+        for git_path in potential_paths:
+            try:
+                # 测试Git是否可用
+                result = subprocess.run(
+                    [git_path, "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                )
+                if result.returncode == 0:
+                    logger.info(f"找到可用的Git: {git_path}")
+                    logger.info(f"Git版本: {result.stdout.strip()}")
+                    return git_path
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+                continue
+        
+        # 尝试使用where命令查找
+        try:
+            if os.name == "nt":
+                result = subprocess.run(
+                    ["where", "git"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+            else:
+                result = subprocess.run(
+                    ["which", "git"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+            
+            if result.returncode == 0:
+                git_path = result.stdout.strip().split('\n')[0]
+                logger.info(f"通过系统命令找到Git: {git_path}")
+                return git_path
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            pass
+        
+        logger.error("在PyInstaller环境中未能找到可用的Git")
+        raise RuntimeError("未能找到可用的Git。请确保Git已正确安装并添加到系统PATH。")
+    else:
+        # 非PyInstaller环境，直接使用git命令
+        logger.info("使用系统Git命令")
+        return "git"
+
+
 def modify_env_file(env_file_path: Path, instance_port: str, instance_id: str) -> bool:
     """
     修改 .env 文件中的端口配置。
@@ -204,16 +358,22 @@ def setup_service_virtual_environment(
 
         logger.info(
             f"切换工作目录到: {service_dir} (服务: {service_name}, 实例ID: {instance_id})"
-        )
-
-        # 创建虚拟环境目录路径
+        )        # 创建虚拟环境目录路径
         venv_path = service_dir / "venv"
+
+        # 获取正确的Python解释器路径
+        try:
+            python_executable = get_python_executable()
+        except RuntimeError as e:
+            logger.error(f"获取Python解释器失败 (服务: {service_name}, 实例ID: {instance_id}): {e}")
+            return False
 
         # 1. 创建虚拟环境
         logger.info(
             f"创建虚拟环境 {venv_path} (服务: {service_name}, 实例ID: {instance_id})"
         )
-        create_venv_cmd = [sys.executable, "-m", "venv", str(venv_path)]
+        logger.info(f"使用Python解释器: {python_executable} (服务: {service_name}, 实例ID: {instance_id})")
+        create_venv_cmd = [python_executable, "-m", "venv", str(venv_path)]
 
         result = subprocess.run(
             create_venv_cmd,
@@ -252,9 +412,7 @@ def setup_service_virtual_environment(
             pip_executable = venv_path / "Scripts" / "pip.exe"
         else:
             python_executable = venv_path / "bin" / "python"
-            pip_executable = venv_path / "bin" / "pip"
-
-        # 升级pip
+            pip_executable = venv_path / "bin" / "pip"        # 升级pip
         logger.info(f"升级pip (服务: {service_name}, 实例ID: {instance_id})")
         upgrade_pip_cmd = [
             str(python_executable),
@@ -505,14 +663,20 @@ class DeployManager:
                 logger.info(f"已清空已存在的部署路径 {deploy_path}")
             except Exception as e:
                 logger.error(f"清空部署路径 {deploy_path} 失败: {e}")
-                return False
-
-        logger.info(f"准备在 {deploy_path} 创建目录（如果不存在）。")
+                return False        
+            logger.info(f"准备在 {deploy_path} 创建目录（如果不存在）。")
         deploy_path.mkdir(parents=True, exist_ok=True)
         logger.info(f"目录 {deploy_path} 已确认存在。")
 
+        # 获取正确的Git可执行文件路径
+        try:
+            git_executable = get_git_executable()
+        except RuntimeError as e:
+            logger.error(f"获取Git可执行文件失败: {e}")
+            return False
+
         clone_command = [
-            "git",
+            git_executable,
             "clone",
             "--branch",
             version_tag,
@@ -594,7 +758,7 @@ class DeployManager:
         Note: exc_info is now a required parameter for onexc.
         """
         # Check if file access error
-        # exc_info[0] is the exception type, exc_info[1] is the exception instance
+        # exc_info[0] is the exception type, exc_info[1] is the exception instance        
         exc_type, exc_instance, _ = exc_info  # Unpack the exc_info tuple
         if isinstance(exc_instance, PermissionError):
             if not os.access(path, os.W_OK):
@@ -604,7 +768,8 @@ class DeployManager:
                 func(path)
             else:
                 # Re-raise the error if it's not a permission issue we can fix
-                raise exc_instance  # Raise the original exception instance        else:
+                raise exc_instance  # Raise the original exception instance
+        else:
             # Re-raise other errors
             raise exc_instance  # Raise the original exception instance
 

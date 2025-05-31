@@ -115,23 +115,43 @@ logger.info(f"已包含 API 路由，前缀为：{API_PREFIX}")
 # --- 全局变量用于优雅关闭 ---
 shutdown_event = asyncio.Event()
 tray_icon = None  # 全局托盘图标实例
+_shutdown_initiated = False  # 标记是否已经开始关闭流程
 
 
 def signal_handler(signum, frame):
     """处理终止信号"""
+    global _shutdown_initiated
+    if _shutdown_initiated:
+        logger.info(f"收到信号 {signum}，但关闭流程已在进行中，忽略此信号")
+        return
+    
     logger.info(f"收到信号 {signum}，开始优雅关闭...")
+    _shutdown_initiated = True
     shutdown_event.set()
+    
+    # 重置信号处理器以避免重复触发
+    if sys.platform != "win32":
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+    else:
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 
 def shutdown_from_tray():
     """从托盘图标触发的关闭函数"""
+    global _shutdown_initiated
+    if _shutdown_initiated:
+        logger.info("托盘图标请求关闭应用程序，但关闭流程已在进行中")
+        return
+    
     logger.info("托盘图标请求关闭应用程序")
+    _shutdown_initiated = True
     shutdown_event.set()
 
 
 # --- 服务器启动 ---
 async def main():
-    global tray_icon
+    global tray_icon, _shutdown_initiated
 
     logger.info("正在启动MaiLauncher后端服务器...")
     logger.info(f"HTTP 和 WebSocket 服务器将在 http://{HTTP_HOST}:{HTTP_PORT} 上启动")
@@ -188,11 +208,10 @@ async def main():
         # 等待服务器启动或关闭信号
         done, pending = await asyncio.wait(
             [server_task, shutdown_task], return_when=asyncio.FIRST_COMPLETED
-        )
-
-        # 如果收到关闭信号
+        )        # 如果收到关闭信号
         if shutdown_task in done:
             logger.info("收到关闭信号，开始优雅关闭...")
+            _shutdown_initiated = True
 
             # 关闭所有 WebSocket 连接
             await shutdown_all_websocket_connections()
@@ -212,16 +231,19 @@ async def main():
             try:
                 await task
             except asyncio.CancelledError:
-                pass
-
-    except KeyboardInterrupt:
-        logger.info("收到键盘中断，开始优雅关闭...")
-        # 关闭所有 WebSocket 连接
-        await shutdown_all_websocket_connections()
+                pass    
+            except KeyboardInterrupt:
+                if not _shutdown_initiated:
+                    logger.info("收到键盘中断，开始优雅关闭...")
+                    _shutdown_initiated = True
+                    # 关闭所有 WebSocket 连接
+                    await shutdown_all_websocket_connections()
     except Exception as e:
         logger.error(f"服务器运行时发生错误: {e}", exc_info=True)
-        # 关闭所有 WebSocket 连接
-        await shutdown_all_websocket_connections()
+        if not _shutdown_initiated:
+            _shutdown_initiated = True
+            # 关闭所有 WebSocket 连接
+            await shutdown_all_websocket_connections()
     finally:
         # 停止托盘图标
         if tray_icon:
@@ -244,4 +266,6 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"主程序启动时发生未处理的异常: {e}", exc_info=True)
     finally:
+        # 确保程序能够退出
         logger.info("MaiLauncher 后端服务已完全关闭。")
+        sys.exit(0)
