@@ -231,7 +231,7 @@ async def handle_websocket_connection(
     pty_process: Optional[PtyProcess] = None
     read_task: Optional[asyncio.Task] = None
 
-    try:        # 检查是否已经有活跃的 PTY 进程
+    try:  # 检查是否已经有活跃的 PTY 进程
         existing_pty_info = None
         async with active_ptys_lock:
             if (
@@ -286,7 +286,7 @@ async def handle_websocket_connection(
             )
             logger.info(
                 f"虚拟终端已创建 (会话: {session_id}, PID: {pty_process.pid})"
-            )            # 保存到 active_ptys，标记为未开始命令
+            )  # 保存到 active_ptys，标记为未开始命令
             async with active_ptys_lock:
                 active_ptys[session_id] = {
                     "pty": pty_process,
