@@ -216,15 +216,14 @@ async def deploy_maibot(
     )
 
     instance_id_str = generate_instance_id(payload.instance_name)
-    logger.info(f"为实例 {payload.instance_name} 生成的 ID: {instance_id_str}")
-
-    # 初始化安装状态缓存
+    logger.info(f"为实例 {payload.instance_name} 生成的 ID: {instance_id_str}")    # 初始化安装状态缓存
     update_install_status(instance_id_str, "preparing", 0, "正在准备部署...")
 
     with Session(engine) as session:
         existing_instance_check = session.exec(
             select(Instances).where(Instances.instance_id == instance_id_str)
         ).first()
+        
         if existing_instance_check:
             logger.warning(
                 f"实例ID {instance_id_str} ({payload.instance_name}) 已存在。"
@@ -232,7 +231,11 @@ async def deploy_maibot(
             update_install_status(instance_id_str, "failed", 0, "实例已存在")
             raise HTTPException(
                 status_code=409,
-                detail=f"实例 '{payload.instance_name}' (ID: {instance_id_str}) 已存在。",
+                detail={
+                    "message": f"实例 '{payload.instance_name}' 已存在",
+                    "detail": f"实例ID {instance_id_str} 已在数据库中注册，请使用不同的实例名称或删除现有实例",
+                    "error_code": "INSTANCE_EXISTS"
+                }
             )
 
     # 将部署过程添加到后台任务
@@ -469,14 +472,37 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
         # 更新进度：虚拟环境设置完成
         update_install_status(
             instance_id_str, "installing", 80, "虚拟环境设置完成，正在保存实例信息..."
-        )
-
-        # 在数据库中保存实例信息
+        )        # 在数据库中保存实例信息
         await save_instance_to_database(payload, instance_id_str)
 
     except Exception as e:
         logger.error(f"后台部署任务发生异常 (实例ID: {instance_id_str}): {e}")
-        update_install_status(instance_id_str, "failed", 0, f"部署失败: {str(e)}")
+        
+        # 构建详细的错误信息
+        error_details = {
+            "message": "部署过程中发生错误",
+            "detail": str(e),
+            "error_type": type(e).__name__,
+            "instance_id": instance_id_str
+        }
+        
+        # 根据异常类型提供更具体的错误信息
+        if "permission" in str(e).lower() or "access" in str(e).lower():
+            error_details["message"] = "权限不足或文件访问被拒绝"
+            error_details["suggestion"] = "请检查安装路径的写入权限，或以管理员身份运行"
+        elif "network" in str(e).lower() or "connection" in str(e).lower():
+            error_details["message"] = "网络连接失败"
+            error_details["suggestion"] = "请检查网络连接，稍后重试"
+        elif "disk" in str(e).lower() or "space" in str(e).lower():
+            error_details["message"] = "磁盘空间不足"
+            error_details["suggestion"] = "请释放磁盘空间后重试"
+        
+        update_install_status(
+            instance_id_str, 
+            "failed", 
+            0, 
+            f"{error_details['message']}: {error_details['detail']}"
+        )
 
 
 async def save_instance_to_database(payload: DeployRequest, instance_id_str: str):
