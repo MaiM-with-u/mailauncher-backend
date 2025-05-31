@@ -420,8 +420,7 @@ def setup_service_virtual_environment(
             )
             return False
         
-        logger.info(f"使用虚拟环境Python: {venv_python_executable} (服务: {service_name}, 实例ID: {instance_id})")
-          # 升级pip
+        logger.info(f"使用虚拟环境Python: {venv_python_executable} (服务: {service_name}, 实例ID: {instance_id})")        # 升级pip
         logger.info(f"升级pip (服务: {service_name}, 实例ID: {instance_id})")
         upgrade_pip_cmd = [
             str(venv_python_executable),
@@ -430,6 +429,10 @@ def setup_service_virtual_environment(
             "install",
             "--upgrade",
             "pip",
+            "-i",
+            "https://mirrors.aliyun.com/pypi/simple/",
+            "--trusted-host",
+            "mirrors.aliyun.com",
         ]
 
         result = subprocess.run(
@@ -446,14 +449,16 @@ def setup_service_virtual_environment(
                 f"升级pip失败 (服务: {service_name}, 实例ID: {instance_id}): {result.stderr}"
             )
         else:
-            logger.info(f"pip升级成功 (服务: {service_name}, 实例ID: {instance_id})")
-
-        # 安装requirements.txt中的依赖
+            logger.info(f"pip升级成功 (服务: {service_name}, 实例ID: {instance_id})")        # 安装requirements.txt中的依赖
         install_deps_cmd = [
             str(venv_pip_executable),
             "install",
             "-r",
             str(requirements_file),
+            "-i",
+            "https://mirrors.aliyun.com/pypi/simple/",
+            "--trusted-host",
+            "mirrors.aliyun.com",
         ]
 
         logger.info(

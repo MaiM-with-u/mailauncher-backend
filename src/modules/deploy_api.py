@@ -684,9 +684,7 @@ async def setup_virtual_environment_background(
             pip_executable = venv_path / "Scripts" / "pip.exe"
         else:
             python_executable = venv_path / "bin" / "python"
-            pip_executable = venv_path / "bin" / "pip"
-
-        # 升级pip
+            pip_executable = venv_path / "bin" / "pip"        # 升级pip
         logger.info(f"升级pip (实例ID: {instance_id})")
         upgrade_pip_cmd = [
             str(python_executable),
@@ -695,6 +693,10 @@ async def setup_virtual_environment_background(
             "install",
             "--upgrade",
             "pip",
+            "-i",
+            "https://mirrors.aliyun.com/pypi/simple/",
+            "--trusted-host",
+            "mirrors.aliyun.com",
         ]
 
         result = await loop.run_in_executor(
@@ -723,14 +725,16 @@ async def setup_virtual_environment_background(
         # 更新状态：开始安装依赖包
         update_install_status(
             instance_id, "installing", 68, "正在安装 Python 依赖包..."
-        )
-
-        # 安装requirements.txt中的依赖
+        )        # 安装requirements.txt中的依赖
         install_deps_cmd = [
             str(pip_executable),
             "install",
             "-r",
             str(requirements_file),
+            "-i",
+            "https://mirrors.aliyun.com/pypi/simple/",
+            "--trusted-host",
+            "mirrors.aliyun.com",
         ]
 
         logger.info(
