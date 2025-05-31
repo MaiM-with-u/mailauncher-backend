@@ -354,11 +354,12 @@ def setup_service_virtual_environment(
             logger.error(
                 f"服务目录 {service_dir} 不存在 (服务: {service_name}, 实例ID: {instance_id})"
             )
-            return False
-
+            return False        
         logger.info(
             f"切换工作目录到: {service_dir} (服务: {service_name}, 实例ID: {instance_id})"
-        )        # 创建虚拟环境目录路径
+        )
+        
+        # 创建虚拟环境目录路径
         venv_path = service_dir / "venv"
 
         # 获取正确的Python解释器路径
@@ -401,21 +402,29 @@ def setup_service_virtual_environment(
             logger.info(
                 f"跳过依赖安装步骤 (服务: {service_name}, 实例ID: {instance_id})"
             )
-            return True
-
-        # 3. 安装依赖
+            return True        # 3. 安装依赖
         logger.info(f"开始安装依赖 (服务: {service_name}, 实例ID: {instance_id})")
-
+        
         # 在Windows系统中，虚拟环境的Python和pip路径
         if os.name == "nt":
-            python_executable = venv_path / "Scripts" / "python.exe"
-            pip_executable = venv_path / "Scripts" / "pip.exe"
+            venv_python_executable = venv_path / "Scripts" / "python.exe"
+            venv_pip_executable = venv_path / "Scripts" / "pip.exe"
         else:
-            python_executable = venv_path / "bin" / "python"
-            pip_executable = venv_path / "bin" / "pip"        # 升级pip
+            venv_python_executable = venv_path / "bin" / "python"
+            venv_pip_executable = venv_path / "bin" / "pip"
+        
+        # 验证虚拟环境中的Python可执行文件是否存在
+        if not venv_python_executable.exists():
+            logger.error(
+                f"虚拟环境Python可执行文件不存在: {venv_python_executable} (服务: {service_name}, 实例ID: {instance_id})"
+            )
+            return False
+        
+        logger.info(f"使用虚拟环境Python: {venv_python_executable} (服务: {service_name}, 实例ID: {instance_id})")
+          # 升级pip
         logger.info(f"升级pip (服务: {service_name}, 实例ID: {instance_id})")
         upgrade_pip_cmd = [
-            str(python_executable),
+            str(venv_python_executable),
             "-m",
             "pip",
             "install",
@@ -441,7 +450,7 @@ def setup_service_virtual_environment(
 
         # 安装requirements.txt中的依赖
         install_deps_cmd = [
-            str(pip_executable),
+            str(venv_pip_executable),
             "install",
             "-r",
             str(requirements_file),
