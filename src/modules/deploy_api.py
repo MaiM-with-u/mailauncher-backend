@@ -15,10 +15,9 @@ from src.utils.database import engine
 from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 import httpx
-from src.tools.deploy_version import deploy_manager  # 导入部署管理器
+from src.tools.deploy_version import deploy_manager, get_python_executable  # 导入部署管理器和Python路径检测器
 from pathlib import Path  # Add Path import
 import subprocess
-import sys
 import os
 import threading
 import asyncio
@@ -283,7 +282,7 @@ async def get_available_versions() -> AvailableVersionsResponse:
                 for tag in tags_data
                 if "name" in tag
                 and isinstance(tag["name"], str)
-                and tag["name"].startswith("0.6")
+                and tag["name"].startswith("0.7")
                 and tag["name"] != "EasyInstall-windows"
             ]
             # 不再强制添加 "latest"
@@ -295,11 +294,10 @@ async def get_available_versions() -> AvailableVersionsResponse:
             return versions
 
     try:
-        versions: List[str] = await fetch_versions_from_url(github_api_url, "GitHub")
-        # 如果过滤后没有0.6.x的版本，但有main，则返回main
-        if not any(v.startswith("0.6") for v in versions) and "main" in versions:
-            logger.info("GitHub 中未找到 0.6.x 版本，但存在 main 版本。")
-        elif not versions:  # 如果 GitHub 返回空列表（无0.6.x也无main）
+        versions: List[str] = await fetch_versions_from_url(github_api_url, "GitHub")        # 如果过滤后没有0.7.x的版本，但有main，则返回main
+        if not any(v.startswith("0.7") for v in versions) and "main" in versions:
+            logger.info("GitHub 中未找到 0.7.x 版本，但存在 main 版本。")
+        elif not versions:  # 如果 GitHub 返回空列表（无0.7.x也无main）
             logger.warning("GitHub 未返回任何有效版本，尝试 Gitee。")
             raise httpx.RequestError(
                 "No valid versions from GitHub"
@@ -312,8 +310,8 @@ async def get_available_versions() -> AvailableVersionsResponse:
         )
         try:
             versions: List[str] = await fetch_versions_from_url(gitee_api_url, "Gitee")
-            if not any(v.startswith("0.6") for v in versions) and "main" in versions:
-                logger.info("Gitee 中未找到 0.6.x 版本，但存在 main 版本。")
+            if not any(v.startswith("0.7") for v in versions) and "main" in versions:
+                logger.info("Gitee 中未找到 0.7.x 版本，但存在 main 版本。")
             elif not versions:  # 如果 Gitee 也返回空列表
                 logger.warning("Gitee 未返回任何有效版本，返回默认版本。")
                 return AvailableVersionsResponse(
@@ -627,11 +625,19 @@ async def setup_virtual_environment_background(
         # 更新状态：开始创建虚拟环境
         update_install_status(
             instance_id, "installing", 50, "正在创建 Python 虚拟环境..."
-        )
-
-        # 1. 创建虚拟环境
+        )        # 1. 创建虚拟环境
         logger.info(f"创建虚拟环境 {venv_path} (实例ID: {instance_id})")
-        create_venv_cmd = [sys.executable, "-m", "venv", str(venv_path)]
+        
+        # 获取正确的Python解释器路径
+        try:
+            python_executable = get_python_executable()
+        except RuntimeError as e:
+            logger.error(f"获取Python解释器失败 (实例ID: {instance_id}): {e}")
+            update_install_status(instance_id, "failed", 50, f"Python解释器获取失败: {str(e)}")
+            return False
+        
+        logger.info(f"使用Python解释器: {python_executable} (实例ID: {instance_id})")
+        create_venv_cmd = [python_executable, "-m", "venv", str(venv_path)]
 
         # 在线程池中执行虚拟环境创建，避免阻塞事件循环
         loop = asyncio.get_event_loop()
