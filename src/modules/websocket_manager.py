@@ -5,6 +5,8 @@ from winpty import PtyProcess  # type: ignore
 import json
 from typing import Dict, Any, Tuple, Optional
 import logging
+import time
+import os
 
 from src.utils.database import Database, get_db_instance
 from src.modules.instance_manager import instance_manager, InstanceStatus
@@ -18,6 +20,105 @@ PTY_ROWS_DEFAULT = 25
 
 active_ptys: Dict[str, Dict[str, Any]] = {}
 active_ptys_lock = asyncio.Lock()
+
+# 日志存储和历史恢复功能
+LOG_DIR = "logs"
+
+
+def ensure_log_directory():
+    """确保日志目录存在"""
+    if not os.path.exists(LOG_DIR):
+        os.makedirs(LOG_DIR)
+
+
+def get_log_file_path(session_id: str) -> str:
+    """获取会话的日志文件路径"""
+    ensure_log_directory()
+    return os.path.join(LOG_DIR, f"{session_id}.txt")
+
+
+async def store_log_to_file(session_id: str, data: str):
+    """将日志数据存储到文件"""
+    try:
+        timestamp = int(time.time() * 1000)
+        log_entry = f"{timestamp}:{data}"
+
+        log_file_path = get_log_file_path(session_id)
+
+        # 异步写入文件
+        def write_log():
+            with open(log_file_path, "a", encoding="utf-8") as f:
+                f.write(log_entry)
+
+        await asyncio.to_thread(write_log)
+
+    except Exception as e:
+        logger.error(f"存储日志到文件时出错 (会话 {session_id}): {e}")
+
+
+async def send_history_logs(
+    websocket: WebSocket,
+    session_id: str,
+    from_time: float,
+    db: Database,
+    to_time: Optional[float] = None,
+):
+    """发送历史日志到WebSocket客户端"""
+    try:
+        if websocket.client_state != WebSocketState.CONNECTED:
+            return
+
+        log_file_path = get_log_file_path(session_id)
+
+        if not os.path.exists(log_file_path):
+            logger.info(f"会话 {session_id} 的日志文件不存在，跳过历史日志发送")
+            return
+
+        # 异步读取和过滤日志
+        def read_and_filter_logs():
+            filtered_logs = []
+            try:
+                with open(log_file_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+
+                        # 解析时间戳和数据
+                        if ":" in line:
+                            timestamp_str, data = line.split(":", 1)
+                            try:
+                                timestamp = float(timestamp_str)
+
+                                # 时间过滤
+                                if timestamp >= from_time:
+                                    if to_time is None or timestamp <= to_time:
+                                        filtered_logs.append(
+                                            {"timestamp": timestamp, "data": data}
+                                        )
+
+                            except ValueError:
+                                continue
+
+            except Exception as e:
+                logger.error(f"读取日志文件时出错 (会话 {session_id}): {e}")
+
+            return filtered_logs
+
+        logs = await asyncio.to_thread(read_and_filter_logs)
+
+        if logs:
+            # 发送历史日志
+            await websocket.send_json(
+                {"type": "history_logs", "logs": logs, "session_id": session_id}
+            )
+
+            logger.info(f"已发送 {len(logs)} 条历史日志到会话 {session_id}")
+        else:
+            logger.info(f"会话 {session_id} 没有符合条件的历史日志")
+
+    except Exception as e:
+        logger.error(f"发送历史日志时出错 (会话 {session_id}): {e}")
 
 
 async def get_pty_command_and_cwd_from_instance(
@@ -129,11 +230,11 @@ async def get_pty_command_and_cwd_from_instance(
     return pty_command, pty_cwd, status_value
 
 
-async def pty_output_to_websocket(
+async def pty_output_to_websocket_and_db(
     session_id: str, pty_process: PtyProcess, websocket: WebSocket, db: Database
 ):
     """
-    读取 PTY 输出，将其发送到 WebSocket (FastAPI version)。不再存储到数据库。
+    读取 PTY 输出，将其发送到 WebSocket 并存储到日志文件 (FastAPI version)。
     """
     try:
         while True:
@@ -159,6 +260,9 @@ async def pty_output_to_websocket(
                         f"会话 {session_id} 的 PTY 返回了未知类型的数据: {type(data)}"
                     )
                     str_data = str(data)
+
+                # 存储到日志文件
+                await store_log_to_file(session_id, str_data)
 
                 if websocket.client_state == WebSocketState.CONNECTED:
                     try:
@@ -198,13 +302,15 @@ async def handle_websocket_connection(
     """
     处理单个 WebSocket 连接 (FastAPI version)。
     session_id 是从路径中提取的部分，例如 "yourinstanceid_main"。
-    不再发送历史日志。
-    创建虚拟终端但不直接执行命令，等待前端调用实例启动API后才开始运行。
+    现在支持历史日志恢复。
     """
     await websocket.accept()
     logger.info(
         f"客户端已连接 (FastAPI)，会话 ID: {session_id}，来自 {websocket.client.host}:{websocket.client.port}"
     )
+
+    # 初始化历史日志发送标记，防止重复发送
+    websocket._history_logs_sent = False
 
     # 解析 session_id 获取实例 ID 和类型
     parts = session_id.rpartition("_")
@@ -250,12 +356,10 @@ async def handle_websocket_connection(
                 if session_id in active_ptys:
                     active_ptys[session_id]["ws"] = websocket
 
-            logger.info(f"连接到现有的 PTY 进程 (会话: {session_id})")
-
-            # 如果 PTY 已经在运行命令，启动输出读取任务
+            logger.info(f"连接到现有的 PTY 进程 (会话: {session_id})")            # 如果 PTY 已经在运行命令，启动输出读取任务
             if existing_pty_info.get("command_started", False):
                 read_task = asyncio.create_task(
-                    pty_output_to_websocket(session_id, pty_process, websocket, db)
+                    pty_output_to_websocket_and_db(session_id, pty_process, websocket, db)
                 )
                 async with active_ptys_lock:
                     if session_id in active_ptys:
@@ -296,11 +400,9 @@ async def handle_websocket_connection(
                     "type_part": type_part,
                     "command_started": False,  # 标记命令尚未开始
                     "working_directory": pty_cwd,
-                }
-
-            # 启动输出读取任务（用于显示 shell 提示符）
+                }            # 启动输出读取任务（用于显示 shell 提示符）
             read_task = asyncio.create_task(
-                pty_output_to_websocket(session_id, pty_process, websocket, db)
+                pty_output_to_websocket_and_db(session_id, pty_process, websocket, db)
             )
 
             # 更新输出任务（使用单独的锁操作）
@@ -362,6 +464,41 @@ async def handle_websocket_connection(
                                             }
                                         )
                                     break
+                    elif msg_type == "ping":
+                        # 处理心跳ping消息
+                        timestamp = msg_data.get("timestamp", time.time() * 1000)
+                        connection_start_time = msg_data.get("connectionStartTime")
+
+                        # 发送pong响应
+                        if websocket.client_state == WebSocketState.CONNECTED:
+                            await websocket.send_json(
+                                {
+                                    "type": "pong",
+                                    "timestamp": timestamp,
+                                    "server_time": time.time() * 1000,
+                                }
+                            )                        # 只在首次心跳且包含连接开始时间时发送历史日志
+                        # 避免每次心跳都发送历史日志
+                        if connection_start_time:
+                            if not hasattr(websocket, '_history_logs_sent') or not websocket._history_logs_sent:
+                                # 首次心跳，发送历史日志并标记
+                                await send_history_logs(
+                                    websocket, session_id, connection_start_time, db
+                                )
+                                websocket._history_logs_sent = True
+                                logger.info(f"首次心跳已发送历史日志到会话 {session_id}")
+                            else:
+                                logger.debug(f"会话 {session_id} 已发送过历史日志，跳过重复发送")
+
+                    elif msg_type == "request_history":
+                        # 处理历史日志请求
+                        from_time = msg_data.get("fromTime")
+                        to_time = msg_data.get("toTime")
+                        if from_time and to_time:
+                            await send_history_logs(
+                                websocket, session_id, from_time, db, to_time
+                            )
+
                     elif msg_type == "resize":
                         cols = msg_data.get("cols", PTY_COLS_DEFAULT)
                         rows = msg_data.get("rows", PTY_ROWS_DEFAULT)
