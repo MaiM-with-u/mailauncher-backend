@@ -403,28 +403,42 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
 
         # 验证安装路径
         deploy_path = Path(payload.install_path)
-        
+
         # 记录收到的路径信息
         logger.info(f"收到部署路径: {payload.install_path} (实例ID: {instance_id_str})")
-        logger.info(f"解析后的绝对路径: {deploy_path.resolve()} (实例ID: {instance_id_str})")
-        
+        logger.info(
+            f"解析后的绝对路径: {deploy_path.resolve()} (实例ID: {instance_id_str})"
+        )
+
         # 检查父目录是否存在，如果不存在则尝试创建
         if not deploy_path.parent.exists():
-            logger.info(f"父目录不存在，尝试创建: {deploy_path.parent} (实例ID: {instance_id_str})")
+            logger.info(
+                f"父目录不存在，尝试创建: {deploy_path.parent} (实例ID: {instance_id_str})"
+            )
             try:
                 deploy_path.parent.mkdir(parents=True, exist_ok=True)
-                logger.info(f"成功创建父目录: {deploy_path.parent} (实例ID: {instance_id_str})")
+                logger.info(
+                    f"成功创建父目录: {deploy_path.parent} (实例ID: {instance_id_str})"
+                )
             except Exception as e:
-                logger.error(f"创建父目录失败 {deploy_path.parent}: {e} (实例ID: {instance_id_str})")
-                update_install_status(instance_id_str, "failed", 5, f"无法创建安装路径: {str(e)}")
+                logger.error(
+                    f"创建父目录失败 {deploy_path.parent}: {e} (实例ID: {instance_id_str})"
+                )
+                update_install_status(
+                    instance_id_str, "failed", 5, f"无法创建安装路径: {str(e)}"
+                )
                 return
-        
+
         # 检查目标路径是否已存在实例
         if deploy_path.exists() and any(deploy_path.iterdir()):
-            logger.warning(f"目标路径已存在文件: {deploy_path} (实例ID: {instance_id_str})")
+            logger.warning(
+                f"目标路径已存在文件: {deploy_path} (实例ID: {instance_id_str})"
+            )
             # 不强制失败，允许覆盖安装（但记录警告）
-            logger.info(f"继续部署到现有路径，可能会覆盖文件 (实例ID: {instance_id_str})")
-        
+            logger.info(
+                f"继续部署到现有路径，可能会覆盖文件 (实例ID: {instance_id_str})"
+            )
+
         # 验证路径权限（尝试在目标路径创建测试文件）
         try:
             test_file = deploy_path.parent / f"test_write_{instance_id_str}.tmp"
@@ -433,7 +447,9 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
             logger.info(f"路径权限验证通过 (实例ID: {instance_id_str})")
         except Exception as e:
             logger.error(f"路径权限验证失败: {e} (实例ID: {instance_id_str})")
-            update_install_status(instance_id_str, "failed", 5, f"路径权限不足: {str(e)}")
+            update_install_status(
+                instance_id_str, "failed", 5, f"路径权限不足: {str(e)}"
+            )
             return
 
         # 更新进度：开始下载
