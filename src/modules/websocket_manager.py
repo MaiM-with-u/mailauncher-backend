@@ -356,10 +356,14 @@ async def handle_websocket_connection(
                 if session_id in active_ptys:
                     active_ptys[session_id]["ws"] = websocket
 
-            logger.info(f"连接到现有的 PTY 进程 (会话: {session_id})")            # 如果 PTY 已经在运行命令，启动输出读取任务
+            logger.info(
+                f"连接到现有的 PTY 进程 (会话: {session_id})"
+            )  # 如果 PTY 已经在运行命令，启动输出读取任务
             if existing_pty_info.get("command_started", False):
                 read_task = asyncio.create_task(
-                    pty_output_to_websocket_and_db(session_id, pty_process, websocket, db)
+                    pty_output_to_websocket_and_db(
+                        session_id, pty_process, websocket, db
+                    )
                 )
                 async with active_ptys_lock:
                     if session_id in active_ptys:
@@ -400,7 +404,7 @@ async def handle_websocket_connection(
                     "type_part": type_part,
                     "command_started": False,  # 标记命令尚未开始
                     "working_directory": pty_cwd,
-                }            # 启动输出读取任务（用于显示 shell 提示符）
+                }  # 启动输出读取任务（用于显示 shell 提示符）
             read_task = asyncio.create_task(
                 pty_output_to_websocket_and_db(session_id, pty_process, websocket, db)
             )
@@ -477,18 +481,25 @@ async def handle_websocket_connection(
                                     "timestamp": timestamp,
                                     "server_time": time.time() * 1000,
                                 }
-                            )                        # 只在首次心跳且包含连接开始时间时发送历史日志
+                            )  # 只在首次心跳且包含连接开始时间时发送历史日志
                         # 避免每次心跳都发送历史日志
                         if connection_start_time:
-                            if not hasattr(websocket, '_history_logs_sent') or not websocket._history_logs_sent:
+                            if (
+                                not hasattr(websocket, "_history_logs_sent")
+                                or not websocket._history_logs_sent
+                            ):
                                 # 首次心跳，发送历史日志并标记
                                 await send_history_logs(
                                     websocket, session_id, connection_start_time, db
                                 )
                                 websocket._history_logs_sent = True
-                                logger.info(f"首次心跳已发送历史日志到会话 {session_id}")
+                                logger.info(
+                                    f"首次心跳已发送历史日志到会话 {session_id}"
+                                )
                             else:
-                                logger.debug(f"会话 {session_id} 已发送过历史日志，跳过重复发送")
+                                logger.debug(
+                                    f"会话 {session_id} 已发送过历史日志，跳过重复发送"
+                                )
 
                     elif msg_type == "request_history":
                         # 处理历史日志请求
