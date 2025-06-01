@@ -29,11 +29,11 @@ VSVersionInfo(
       StringTable(
         u'080404B0',
         [StringStruct(u'CompanyName', u'MaiM-with-u'),        StringStruct(u'FileDescription', u'MaiLauncher 启动器后端服务'),
-        StringStruct(u'FileVersion', u'0.1.0-Preview.1'),
+        StringStruct(u'FileVersion', u'0.1.0-Preview.2'),
         StringStruct(u'InternalName', u'MaiLauncher-Backend'),
         StringStruct(u'LegalCopyright', u'Copyright © 2025 MaiM-with-u. All rights reserved.'),
         StringStruct(u'OriginalFilename', u'MaiLauncher-Backend.exe'),        StringStruct(u'ProductName', u'MaiLauncher Backend'),
-        StringStruct(u'ProductVersion', u'0.1.0-Preview.1'),
+        StringStruct(u'ProductVersion', u'0.1.0-Preview.2'),
         StringStruct(u'Comments', u'MaiBot实例管理和部署工具的后端服务'),
         StringStruct(u'LegalTrademarks', u'MaiLauncher')]
         )
