@@ -18,14 +18,14 @@ logger = get_module_logger("版本部署工具")
 def get_python_executable() -> str:
     """
     获取正确的Python解释器路径，处理PyInstaller打包环境。
-    
+
     Returns:
         str: Python解释器的路径
     """
     # 检测是否在PyInstaller打包的环境中运行
-    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         logger.info("检测到PyInstaller环境，寻找系统Python解释器...")
-        
+
         # 尝试常见的Python安装路径
         potential_paths = [
             # Python Launcher
@@ -47,7 +47,7 @@ def get_python_executable() -> str:
             r"C:\Program Files\Python311\python.exe",
             r"C:\Program Files\Python310\python.exe",
         ]
-        
+
         for python_path in potential_paths:
             try:
                 # 测试Python解释器是否可用
@@ -64,7 +64,7 @@ def get_python_executable() -> str:
                     return python_path
             except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
                 continue
-        
+
         # 如果都不行，尝试使用whereis或where命令查找
         try:
             if os.name == "nt":
@@ -82,16 +82,18 @@ def get_python_executable() -> str:
                     text=True,
                     timeout=10,
                 )
-            
+
             if result.returncode == 0:
-                python_path = result.stdout.strip().split('\n')[0]
+                python_path = result.stdout.strip().split("\n")[0]
                 logger.info(f"通过系统命令找到Python解释器: {python_path}")
                 return python_path
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
             pass
-        
+
         logger.error("在PyInstaller环境中未能找到可用的Python解释器")
-        raise RuntimeError("未能找到可用的Python解释器。请确保Python已正确安装并添加到系统PATH。")
+        raise RuntimeError(
+            "未能找到可用的Python解释器。请确保Python已正确安装并添加到系统PATH。"
+        )
     else:
         # 非PyInstaller环境，使用sys.executable
         logger.info(f"使用当前Python解释器: {sys.executable}")
@@ -101,14 +103,14 @@ def get_python_executable() -> str:
 def get_git_executable() -> str:
     """
     获取正确的Git可执行文件路径，处理PyInstaller打包环境。
-    
+
     Returns:
         str: Git可执行文件的路径
     """
     # 检测是否在PyInstaller打包的环境中运行
-    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
         logger.info("检测到PyInstaller环境，寻找系统Git...")
-        
+
         # 尝试常见的Git安装路径
         potential_paths = [
             "git",  # 系统PATH中的git
@@ -118,7 +120,7 @@ def get_git_executable() -> str:
             # 便携版Git路径
             r"C:\PortableGit\bin\git.exe",
         ]
-        
+
         for git_path in potential_paths:
             try:
                 # 测试Git是否可用
@@ -135,7 +137,7 @@ def get_git_executable() -> str:
                     return git_path
             except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
                 continue
-        
+
         # 尝试使用where命令查找
         try:
             if os.name == "nt":
@@ -153,14 +155,14 @@ def get_git_executable() -> str:
                     text=True,
                     timeout=10,
                 )
-            
+
             if result.returncode == 0:
-                git_path = result.stdout.strip().split('\n')[0]
+                git_path = result.stdout.strip().split("\n")[0]
                 logger.info(f"通过系统命令找到Git: {git_path}")
                 return git_path
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
             pass
-        
+
         logger.error("在PyInstaller环境中未能找到可用的Git")
         raise RuntimeError("未能找到可用的Git。请确保Git已正确安装并添加到系统PATH。")
     else:
@@ -354,11 +356,11 @@ def setup_service_virtual_environment(
             logger.error(
                 f"服务目录 {service_dir} 不存在 (服务: {service_name}, 实例ID: {instance_id})"
             )
-            return False        
+            return False
         logger.info(
             f"切换工作目录到: {service_dir} (服务: {service_name}, 实例ID: {instance_id})"
         )
-        
+
         # 创建虚拟环境目录路径
         venv_path = service_dir / "venv"
 
@@ -366,14 +368,18 @@ def setup_service_virtual_environment(
         try:
             python_executable = get_python_executable()
         except RuntimeError as e:
-            logger.error(f"获取Python解释器失败 (服务: {service_name}, 实例ID: {instance_id}): {e}")
+            logger.error(
+                f"获取Python解释器失败 (服务: {service_name}, 实例ID: {instance_id}): {e}"
+            )
             return False
 
         # 1. 创建虚拟环境
         logger.info(
             f"创建虚拟环境 {venv_path} (服务: {service_name}, 实例ID: {instance_id})"
         )
-        logger.info(f"使用Python解释器: {python_executable} (服务: {service_name}, 实例ID: {instance_id})")
+        logger.info(
+            f"使用Python解释器: {python_executable} (服务: {service_name}, 实例ID: {instance_id})"
+        )
         create_venv_cmd = [python_executable, "-m", "venv", str(venv_path)]
 
         result = subprocess.run(
@@ -402,9 +408,9 @@ def setup_service_virtual_environment(
             logger.info(
                 f"跳过依赖安装步骤 (服务: {service_name}, 实例ID: {instance_id})"
             )
-            return True        # 3. 安装依赖
+            return True  # 3. 安装依赖
         logger.info(f"开始安装依赖 (服务: {service_name}, 实例ID: {instance_id})")
-        
+
         # 在Windows系统中，虚拟环境的Python和pip路径
         if os.name == "nt":
             venv_python_executable = venv_path / "Scripts" / "python.exe"
@@ -412,15 +418,17 @@ def setup_service_virtual_environment(
         else:
             venv_python_executable = venv_path / "bin" / "python"
             venv_pip_executable = venv_path / "bin" / "pip"
-        
+
         # 验证虚拟环境中的Python可执行文件是否存在
         if not venv_python_executable.exists():
             logger.error(
                 f"虚拟环境Python可执行文件不存在: {venv_python_executable} (服务: {service_name}, 实例ID: {instance_id})"
             )
             return False
-        
-        logger.info(f"使用虚拟环境Python: {venv_python_executable} (服务: {service_name}, 实例ID: {instance_id})")        # 升级pip
+
+        logger.info(
+            f"使用虚拟环境Python: {venv_python_executable} (服务: {service_name}, 实例ID: {instance_id})"
+        )  # 升级pip
         logger.info(f"升级pip (服务: {service_name}, 实例ID: {instance_id})")
         upgrade_pip_cmd = [
             str(venv_python_executable),
@@ -449,7 +457,9 @@ def setup_service_virtual_environment(
                 f"升级pip失败 (服务: {service_name}, 实例ID: {instance_id}): {result.stderr}"
             )
         else:
-            logger.info(f"pip升级成功 (服务: {service_name}, 实例ID: {instance_id})")        # 安装requirements.txt中的依赖
+            logger.info(
+                f"pip升级成功 (服务: {service_name}, 实例ID: {instance_id})"
+            )  # 安装requirements.txt中的依赖
         install_deps_cmd = [
             str(venv_pip_executable),
             "install",
@@ -677,7 +687,7 @@ class DeployManager:
                 logger.info(f"已清空已存在的部署路径 {deploy_path}")
             except Exception as e:
                 logger.error(f"清空部署路径 {deploy_path} 失败: {e}")
-                return False        
+                return False
             logger.info(f"准备在 {deploy_path} 创建目录（如果不存在）。")
         deploy_path.mkdir(parents=True, exist_ok=True)
         logger.info(f"目录 {deploy_path} 已确认存在。")
@@ -772,7 +782,7 @@ class DeployManager:
         Note: exc_info is now a required parameter for onexc.
         """
         # Check if file access error
-        # exc_info[0] is the exception type, exc_info[1] is the exception instance        
+        # exc_info[0] is the exception type, exc_info[1] is the exception instance
         exc_type, exc_instance, _ = exc_info  # Unpack the exc_info tuple
         if isinstance(exc_instance, PermissionError):
             if not os.access(path, os.W_OK):

@@ -124,11 +124,11 @@ def signal_handler(signum, frame):
     if _shutdown_initiated:
         logger.info(f"收到信号 {signum}，但关闭流程已在进行中，忽略此信号")
         return
-    
+
     logger.info(f"收到信号 {signum}，开始优雅关闭...")
     _shutdown_initiated = True
     shutdown_event.set()
-    
+
     # 重置信号处理器以避免重复触发
     if sys.platform != "win32":
         signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -143,7 +143,7 @@ def shutdown_from_tray():
     if _shutdown_initiated:
         logger.info("托盘图标请求关闭应用程序，但关闭流程已在进行中")
         return
-    
+
     logger.info("托盘图标请求关闭应用程序")
     _shutdown_initiated = True
     shutdown_event.set()
@@ -208,7 +208,7 @@ async def main():
         # 等待服务器启动或关闭信号
         done, pending = await asyncio.wait(
             [server_task, shutdown_task], return_when=asyncio.FIRST_COMPLETED
-        )        # 如果收到关闭信号
+        )  # 如果收到关闭信号
         if shutdown_task in done:
             logger.info("收到关闭信号，开始优雅关闭...")
             _shutdown_initiated = True
@@ -231,7 +231,7 @@ async def main():
             try:
                 await task
             except asyncio.CancelledError:
-                pass    
+                pass
             except KeyboardInterrupt:
                 if not _shutdown_initiated:
                     logger.info("收到键盘中断，开始优雅关闭...")

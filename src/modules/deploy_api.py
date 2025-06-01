@@ -15,7 +15,10 @@ from src.utils.database import engine
 from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 import httpx
-from src.tools.deploy_version import deploy_manager, get_python_executable  # 导入部署管理器和Python路径检测器
+from src.tools.deploy_version import (
+    deploy_manager,
+    get_python_executable,
+)  # 导入部署管理器和Python路径检测器
 from pathlib import Path  # Add Path import
 import subprocess
 import os
@@ -294,7 +297,9 @@ async def get_available_versions() -> AvailableVersionsResponse:
             return versions
 
     try:
-        versions: List[str] = await fetch_versions_from_url(github_api_url, "GitHub")        # 如果过滤后没有0.7.x的版本，但有main，则返回main
+        versions: List[str] = await fetch_versions_from_url(
+            github_api_url, "GitHub"
+        )  # 如果过滤后没有0.7.x的版本，但有main，则返回main
         if not any(v.startswith("0.7") for v in versions) and "main" in versions:
             logger.info("GitHub 中未找到 0.7.x 版本，但存在 main 版本。")
         elif not versions:  # 如果 GitHub 返回空列表（无0.7.x也无main）
@@ -625,17 +630,19 @@ async def setup_virtual_environment_background(
         # 更新状态：开始创建虚拟环境
         update_install_status(
             instance_id, "installing", 50, "正在创建 Python 虚拟环境..."
-        )        # 1. 创建虚拟环境
+        )  # 1. 创建虚拟环境
         logger.info(f"创建虚拟环境 {venv_path} (实例ID: {instance_id})")
-        
+
         # 获取正确的Python解释器路径
         try:
             python_executable = get_python_executable()
         except RuntimeError as e:
             logger.error(f"获取Python解释器失败 (实例ID: {instance_id}): {e}")
-            update_install_status(instance_id, "failed", 50, f"Python解释器获取失败: {str(e)}")
+            update_install_status(
+                instance_id, "failed", 50, f"Python解释器获取失败: {str(e)}"
+            )
             return False
-        
+
         logger.info(f"使用Python解释器: {python_executable} (实例ID: {instance_id})")
         create_venv_cmd = [python_executable, "-m", "venv", str(venv_path)]
 
@@ -690,7 +697,7 @@ async def setup_virtual_environment_background(
             pip_executable = venv_path / "Scripts" / "pip.exe"
         else:
             python_executable = venv_path / "bin" / "python"
-            pip_executable = venv_path / "bin" / "pip"        # 升级pip
+            pip_executable = venv_path / "bin" / "pip"  # 升级pip
         logger.info(f"升级pip (实例ID: {instance_id})")
         upgrade_pip_cmd = [
             str(python_executable),
@@ -731,7 +738,7 @@ async def setup_virtual_environment_background(
         # 更新状态：开始安装依赖包
         update_install_status(
             instance_id, "installing", 68, "正在安装 Python 依赖包..."
-        )        # 安装requirements.txt中的依赖
+        )  # 安装requirements.txt中的依赖
         install_deps_cmd = [
             str(pip_executable),
             "install",

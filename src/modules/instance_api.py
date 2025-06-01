@@ -146,23 +146,27 @@ async def _start_pty_process(
             logger.info(f"检测到虚拟环境 Python 路径: {python_exe_path}")
 
             # 验证文件是否存在
-            from pathlib import Path            
+            from pathlib import Path
+
             if not Path(python_exe_path).exists():
                 logger.warning(f"虚拟环境 Python 文件不存在: {python_exe_path}")
                 logger.warning("这可能导致 PTY 启动失败")
             else:
                 logger.info(f"虚拟环境 Python 文件存在且可访问: {python_exe_path}")
-    
+
     # 首先检查是否有现有的PTY进程
     existing_pty_info = None
     async with active_ptys_lock:
         if session_id in active_ptys:
-            existing_pty_info = active_ptys[session_id].copy()  # 复制数据以避免在锁外访问
+            existing_pty_info = active_ptys[
+                session_id
+            ].copy()  # 复制数据以避免在锁外访问
 
-    if (existing_pty_info 
-        and existing_pty_info.get("pty") 
-        and existing_pty_info["pty"].isalive()):
-        
+    if (
+        existing_pty_info
+        and existing_pty_info.get("pty")
+        and existing_pty_info["pty"].isalive()
+    ):
         # 检查是否已经启动了命令
         if existing_pty_info.get("command_started", False):
             logger.info(f"会话 {session_id} 的命令已在运行。")
@@ -195,7 +199,7 @@ async def _start_pty_process(
         except Exception as e:
             logger.error(f"向会话 {session_id} 的虚拟终端发送命令失败: {e}")
             return False
-                # 如果虚拟终端不存在，创建新的 PTY 进程（直接执行命令）
+            # 如果虚拟终端不存在，创建新的 PTY 进程（直接执行命令）
     try:
         # 为 PtyProcess.spawn 准备命令
         try:
