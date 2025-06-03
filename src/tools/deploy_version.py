@@ -656,7 +656,8 @@ class DeployManager:
         logger.info(
             f"服务 '{service_name}' 部署和虚拟环境设置成功 (实例ID: {instance_id})"
         )
-        return True    
+        return True
+
     def _run_git_clone(
         self, repo_url: str, version_tag: str, deploy_path: Path
     ) -> bool:
@@ -665,7 +666,9 @@ class DeployManager:
         源代码将直接位于 deploy_path 下。
         """
         if deploy_path.exists() and any(deploy_path.iterdir()):
-            logger.error(f"部署路径 {deploy_path} 已存在且非空，无法继续部署。请清空目录后重试。")
+            logger.error(
+                f"部署路径 {deploy_path} 已存在且非空，无法继续部署。请清空目录后重试。"
+            )
             return False
         deploy_path.mkdir(parents=True, exist_ok=True)
         logger.info(f"目录 {deploy_path} 已确认存在。")
