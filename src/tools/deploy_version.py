@@ -656,8 +656,7 @@ class DeployManager:
         logger.info(
             f"服务 '{service_name}' 部署和虚拟环境设置成功 (实例ID: {instance_id})"
         )
-        return True
-
+        return True    
     def _run_git_clone(
         self, repo_url: str, version_tag: str, deploy_path: Path
     ) -> bool:
@@ -666,29 +665,8 @@ class DeployManager:
         源代码将直接位于 deploy_path 下。
         """
         if deploy_path.exists() and any(deploy_path.iterdir()):
-            logger.warning(f"部署路径 {deploy_path} 已存在且非空。正在尝试清空...")
-            try:
-                # Enhanced directory clearing
-                for item in deploy_path.iterdir():
-                    if item.is_dir():
-                        # Attempt to remove read-only flags from .git directory contents
-                        if item.name == ".git":
-                            for root, dirs, files in os.walk(item, topdown=False):
-                                for name in files:
-                                    filename = os.path.join(root, name)
-                                    os.chmod(filename, stat.S_IWUSR)
-                                for name in dirs:
-                                    os.chmod(os.path.join(root, name), stat.S_IWUSR)
-                        shutil.rmtree(item, onexc=self._handle_remove_readonly)
-                    else:
-                        if not os.access(item, os.W_OK):
-                            os.chmod(item, stat.S_IWUSR)
-                        item.unlink()
-                logger.info(f"已清空已存在的部署路径 {deploy_path}")
-            except Exception as e:
-                logger.error(f"清空部署路径 {deploy_path} 失败: {e}")
-                return False
-            logger.info(f"准备在 {deploy_path} 创建目录（如果不存在）。")
+            logger.error(f"部署路径 {deploy_path} 已存在且非空，无法继续部署。请清空目录后重试。")
+            return False
         deploy_path.mkdir(parents=True, exist_ok=True)
         logger.info(f"目录 {deploy_path} 已确认存在。")
 
