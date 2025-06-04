@@ -567,7 +567,7 @@ async def save_instance_to_database(payload: DeployRequest, instance_id_str: str
                 name=payload.instance_name,
                 version=payload.version,
                 path=payload.install_path,
-                status=InstanceStatus.STARTING,
+                status=InstanceStatus.STOPPED,  # 初始状态为 STOPPED
                 port=payload.port,
                 instance_id=instance_id_str,
                 db_session=session,
