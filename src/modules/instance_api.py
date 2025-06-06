@@ -683,9 +683,10 @@ async def add_existing_instance(payload: DeployRequest):
             logger.error(f"指定的安装路径不是目录: {payload.install_path}")
             raise HTTPException(
                 status_code=400, detail=f"指定的安装路径不是目录: {payload.install_path}"
-            )
-            
-        main_install_path = payload.install_path    # 验证各个服务路径是否存在
+            )            
+        main_install_path = payload.install_path
+        
+    # 验证各个服务路径是否存在
     for service_config in payload.install_services:
         service_path = Path(service_config.path)
         if not service_path.exists():
@@ -711,11 +712,11 @@ async def add_existing_instance(payload: DeployRequest):
     logger.info(f"为实例 {payload.instance_name} 生成的 ID: {instance_id_str}")
 
     # 创建数据库记录
-    with Session(engine) as session:
-        # 检查实例是否已存在
+    with Session(engine) as session:        # 检查实例是否已存在
         existing_instance_check = session.exec(
             select(Instances).where(Instances.instance_id == instance_id_str)
         ).first()
+        
         if existing_instance_check:
             logger.warning(
                 f"实例ID {instance_id_str} ({payload.instance_name}) 已存在。"
@@ -730,7 +731,7 @@ async def add_existing_instance(payload: DeployRequest):
             new_instance_obj = instance_manager.create_instance(
                 name=payload.instance_name,
                 version=payload.version,
-                path=payload.install_path,
+                path=main_install_path,  # 使用main_install_path而不是payload.install_path
                 status=InstanceStatus.STOPPED,  # 新添加的实例默认为停止状态
                 port=payload.port,
                 instance_id=instance_id_str,
