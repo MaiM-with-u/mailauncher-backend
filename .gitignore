@@ -187,3 +187,6 @@ logs/
 *_main.txt
 *_napcat-*.txt
 [0-9a-f]*_*.txt
+
+# MaiBot test
+~
