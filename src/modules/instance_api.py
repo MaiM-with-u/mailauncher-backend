@@ -50,8 +50,12 @@ class DeployRequest(BaseModel):
     port: int = Field(..., description="MaiBot 主程序端口")
     version: str = Field(..., description="要部署的 MaiBot 版本")
     # 添加可选的分离路径字段，用于支持硬件已有实例
-    maibot_path: Optional[str] = Field(None, description="MaiBot主程序文件夹路径（用于已有实例）")
-    adapter_path: Optional[str] = Field(None, description="适配器文件夹路径（用于已有实例）")
+    maibot_path: Optional[str] = Field(
+        None, description="MaiBot主程序文件夹路径（用于已有实例）"
+    )
+    adapter_path: Optional[str] = Field(
+        None, description="适配器文件夹路径（用于已有实例）"
+    )
     qq_number: Optional[str] = Field(None, description="关联的QQ号")
 
 
@@ -618,20 +622,20 @@ async def add_existing_instance(payload: DeployRequest):
 
     该API不会进行实际的部署，而是验证指定路径中是否存在麦麦实例，
     然后将其添加到数据库中进行管理。
-    
+
     支持两种模式：
     1. 传统模式：使用install_path作为统一路径
     2. 分离模式：使用maibot_path和adapter_path分别指定MaiBot和适配器路径
     """
-    logger.info(
-        f"收到添加现有实例请求，实例名称: {payload.instance_name}"
-    )
-    
+    logger.info(f"收到添加现有实例请求，实例名称: {payload.instance_name}")
+
     # 确定使用哪种路径模式
     if payload.maibot_path and payload.adapter_path:
         # 分离模式：分别验证MaiBot和适配器路径
-        logger.info(f"使用分离路径模式 - MaiBot: {payload.maibot_path}, 适配器: {payload.adapter_path}")
-        
+        logger.info(
+            f"使用分离路径模式 - MaiBot: {payload.maibot_path}, 适配器: {payload.adapter_path}"
+        )
+
         # 验证MaiBot路径
         maibot_path = Path(payload.maibot_path)
         if not maibot_path.exists():
@@ -642,37 +646,41 @@ async def add_existing_instance(payload: DeployRequest):
         if not maibot_path.is_dir():
             logger.error(f"指定的MaiBot路径不是目录: {payload.maibot_path}")
             raise HTTPException(
-                status_code=400, detail=f"指定的MaiBot路径不是目录: {payload.maibot_path}"
+                status_code=400,
+                detail=f"指定的MaiBot路径不是目录: {payload.maibot_path}",
             )
-            
+
         # 验证适配器路径
         adapter_path = Path(payload.adapter_path)
         if not adapter_path.exists():
             logger.error(f"指定的适配器路径不存在: {payload.adapter_path}")
             raise HTTPException(
-                status_code=400, detail=f"指定的适配器路径不存在: {payload.adapter_path}"
+                status_code=400,
+                detail=f"指定的适配器路径不存在: {payload.adapter_path}",
             )
         if not adapter_path.is_dir():
             logger.error(f"指定的适配器路径不是目录: {payload.adapter_path}")
             raise HTTPException(
-                status_code=400, detail=f"指定的适配器路径不是目录: {payload.adapter_path}"
+                status_code=400,
+                detail=f"指定的适配器路径不是目录: {payload.adapter_path}",
             )
-            
+
         # 检验MaiBot路径中是否包含main.py
         main_py_path = maibot_path / "main.py"
         if not main_py_path.exists():
             logger.error(f"MaiBot路径中未找到main.py: {payload.maibot_path}")
             raise HTTPException(
-                status_code=400, detail=f"MaiBot路径中未找到main.py文件: {payload.maibot_path}"
+                status_code=400,
+                detail=f"MaiBot路径中未找到main.py文件: {payload.maibot_path}",
             )
-            
+
         # 使用MaiBot路径作为主安装路径
         main_install_path = payload.maibot_path
-        
+
     else:
         # 传统模式：使用install_path作为统一路径
         logger.info(f"使用传统路径模式 - 安装路径: {payload.install_path}")
-        
+
         install_path = Path(payload.install_path)
         if not install_path.exists():
             logger.error(f"指定的安装路径不存在: {payload.install_path}")
@@ -682,10 +690,11 @@ async def add_existing_instance(payload: DeployRequest):
         if not install_path.is_dir():
             logger.error(f"指定的安装路径不是目录: {payload.install_path}")
             raise HTTPException(
-                status_code=400, detail=f"指定的安装路径不是目录: {payload.install_path}"
-            )            
+                status_code=400,
+                detail=f"指定的安装路径不是目录: {payload.install_path}",
+            )
         main_install_path = payload.install_path
-        
+
     # 验证各个服务路径是否存在
     for service_config in payload.install_services:
         service_path = Path(service_config.path)
@@ -712,11 +721,11 @@ async def add_existing_instance(payload: DeployRequest):
     logger.info(f"为实例 {payload.instance_name} 生成的 ID: {instance_id_str}")
 
     # 创建数据库记录
-    with Session(engine) as session:        # 检查实例是否已存在
+    with Session(engine) as session:  # 检查实例是否已存在
         existing_instance_check = session.exec(
             select(Instances).where(Instances.instance_id == instance_id_str)
         ).first()
-        
+
         if existing_instance_check:
             logger.warning(
                 f"实例ID {instance_id_str} ({payload.instance_name}) 已存在。"
