@@ -2,9 +2,7 @@ name: Build Cross-Platform Executables
 
 on:
   push:
-    branches: [ main, master, develop ]
-  pull_request:
-    branches: [ main, master, develop ]
+    branches: [ develop ]
 
 jobs:
   build:
