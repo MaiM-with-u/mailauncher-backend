@@ -5,12 +5,330 @@ from pathlib import Path
 from src.utils.logger import get_module_logger
 import stat  # For file permissions
 import sys  # 添加sys导入，用于虚拟环境创建
+import re  # 添加正则表达式支持，用于配置文件修改
+import hashlib  # 添加hashlib导入，用于生成确认文件哈希
 # import errno # For error codes
 
 # Import List for type hinting
 from typing import List, Dict, Any
 
 logger = get_module_logger("版本部署工具")
+
+
+def get_python_executable() -> str:
+    """
+    获取正确的Python解释器路径，处理PyInstaller打包环境。
+
+    Returns:
+        str: Python解释器的路径
+    """
+    # 检测是否在PyInstaller打包的环境中运行
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        logger.info("检测到PyInstaller环境，寻找系统Python解释器...")
+
+        # 尝试常见的Python安装路径
+        potential_paths = [
+            # Python Launcher
+            "py",
+            "python",
+            "python3",
+            # 常见安装路径
+            r"C:\Python312\python.exe",
+            r"C:\Python311\python.exe",
+            r"C:\Python310\python.exe",
+            r"C:\Python39\python.exe",
+            r"C:\Python38\python.exe",
+            # AppData Local 路径
+            os.path.expanduser(r"~\AppData\Local\Programs\Python\Python312\python.exe"),
+            os.path.expanduser(r"~\AppData\Local\Programs\Python\Python311\python.exe"),
+            os.path.expanduser(r"~\AppData\Local\Programs\Python\Python310\python.exe"),
+            # Program Files 路径
+            r"C:\Program Files\Python312\python.exe",
+            r"C:\Program Files\Python311\python.exe",
+            r"C:\Program Files\Python310\python.exe",
+        ]
+
+        for python_path in potential_paths:
+            try:
+                # 测试Python解释器是否可用
+                result = subprocess.run(
+                    [python_path, "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                )
+                if result.returncode == 0:
+                    logger.info(f"找到可用的Python解释器: {python_path}")
+                    logger.info(f"Python版本: {result.stdout.strip()}")
+                    return python_path
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+                continue
+
+        # 如果都不行，尝试使用whereis或where命令查找
+        try:
+            if os.name == "nt":
+                result = subprocess.run(
+                    ["where", "python"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+            else:
+                result = subprocess.run(
+                    ["which", "python3"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+
+            if result.returncode == 0:
+                python_path = result.stdout.strip().split("\n")[0]
+                logger.info(f"通过系统命令找到Python解释器: {python_path}")
+                return python_path
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            pass
+
+        logger.error("在PyInstaller环境中未能找到可用的Python解释器")
+        raise RuntimeError(
+            "未能找到可用的Python解释器。请确保Python已正确安装并添加到系统PATH。"
+        )
+    else:
+        # 非PyInstaller环境，使用sys.executable
+        logger.info(f"使用当前Python解释器: {sys.executable}")
+        return sys.executable
+
+
+def get_git_executable() -> str:
+    """
+    获取正确的Git可执行文件路径，处理PyInstaller打包环境。
+
+    Returns:
+        str: Git可执行文件的路径
+    """
+    # 检测是否在PyInstaller打包的环境中运行
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        logger.info("检测到PyInstaller环境，寻找系统Git...")
+
+        # 尝试常见的Git安装路径
+        potential_paths = [
+            "git",  # 系统PATH中的git
+            r"C:\Program Files\Git\bin\git.exe",
+            r"C:\Program Files (x86)\Git\bin\git.exe",
+            r"C:\Git\bin\git.exe",
+            # 便携版Git路径
+            r"C:\PortableGit\bin\git.exe",
+        ]
+
+        for git_path in potential_paths:
+            try:
+                # 测试Git是否可用
+                result = subprocess.run(
+                    [git_path, "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                )
+                if result.returncode == 0:
+                    logger.info(f"找到可用的Git: {git_path}")
+                    logger.info(f"Git版本: {result.stdout.strip()}")
+                    return git_path
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+                continue
+
+        # 尝试使用where命令查找
+        try:
+            if os.name == "nt":
+                result = subprocess.run(
+                    ["where", "git"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+            else:
+                result = subprocess.run(
+                    ["which", "git"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+
+            if result.returncode == 0:
+                git_path = result.stdout.strip().split("\n")[0]
+                logger.info(f"通过系统命令找到Git: {git_path}")
+                return git_path
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            pass
+
+        logger.error("在PyInstaller环境中未能找到可用的Git")
+        raise RuntimeError("未能找到可用的Git。请确保Git已正确安装并添加到系统PATH。")
+    else:
+        # 非PyInstaller环境，直接使用git命令
+        logger.info("使用系统Git命令")
+        return "git"
+
+
+def modify_env_file(env_file_path: Path, instance_port: str, instance_id: str) -> bool:
+    """
+    修改 .env 文件中的端口配置。
+
+    Args:
+        env_file_path: .env 文件路径
+        instance_port: 实例端口
+        instance_id: 实例ID
+
+    Returns:
+        bool: 修改成功返回True，失败返回False
+    """
+    logger.info(f"开始修改 .env 文件端口配置 (实例ID: {instance_id})")
+
+    try:
+        if not env_file_path.exists():
+            logger.error(f".env 文件不存在: {env_file_path} (实例ID: {instance_id})")
+            return False
+
+        # 读取原文件内容
+        with open(env_file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # 使用正则表达式替换 PORT 配置
+        pattern = r"PORT\s*=\s*\d+"
+        replacement = f"PORT={instance_port}"
+
+        if re.search(pattern, content):
+            new_content = re.sub(pattern, replacement, content)
+
+            # 写回文件
+            with open(env_file_path, "w", encoding="utf-8") as f:
+                f.write(new_content)
+
+            logger.info(
+                f"成功修改 .env 文件端口为 {instance_port} (实例ID: {instance_id})"
+            )
+            return True
+        else:
+            logger.warning(f".env 文件中未找到 PORT 配置 (实例ID: {instance_id})")
+            return False
+
+    except Exception as e:
+        logger.error(f"修改 .env 文件失败 (实例ID: {instance_id}): {e}")
+        return False
+
+
+def modify_napcat_config_file(
+    config_file_path: Path, napcat_port: str, maibot_port: str, instance_id: str
+) -> bool:
+    """
+    修改 napcat-ada 服务的 config.toml 文件。
+
+    Args:
+        config_file_path: config.toml 文件路径
+        napcat_port: Napcat 服务端口
+        maibot_port: MaiBot 主实例端口
+        instance_id: 实例ID
+
+    Returns:
+        bool: 修改成功返回True，失败返回False
+    """
+    logger.info(f"开始修改 napcat-ada config.toml 文件 (实例ID: {instance_id})")
+
+    try:
+        if not config_file_path.exists():
+            logger.error(
+                f"config.toml 文件不存在: {config_file_path} (实例ID: {instance_id})"
+            )
+            return False
+
+        # 读取原文件内容
+        with open(config_file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+
+        # 替换 Napcat_Server 的 port
+        napcat_pattern = r"(\[Napcat_Server\].*?port\s*=\s*)\d+"
+        napcat_replacement = rf"\g<1>{napcat_port}"
+        content = re.sub(napcat_pattern, napcat_replacement, content, flags=re.DOTALL)
+
+        # 替换 MaiBot_Server 的 port
+        maibot_pattern = r"(\[MaiBot_Server\].*?port\s*=\s*)\d+"
+        maibot_replacement = rf"\g<1>{maibot_port}"
+        content = re.sub(
+            maibot_pattern, maibot_replacement, content, flags=re.DOTALL
+        )  # 写回文件
+        with open(config_file_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+        logger.info(
+            f"成功修改 napcat-ada config.toml 文件: Napcat端口={napcat_port}, MaiBot端口={maibot_port} (实例ID: {instance_id})"
+        )
+        return True
+
+    except Exception as e:
+        logger.error(
+            f"修改 napcat-ada config.toml 文件失败 (实例ID: {instance_id}): {e}"
+        )
+        return False
+
+
+def create_agreement_confirmation_files(deploy_path: Path, instance_id: str) -> bool:
+    """
+    在主程序根目录创建确认文件来自动同意用户协议和隐私政策。
+
+    Args:
+        deploy_path: 主程序部署路径
+        instance_id: 实例ID
+
+    Returns:
+        bool: 创建成功返回True，失败返回False
+    """
+    logger.info(f"开始创建用户协议和隐私政策确认文件 (实例ID: {instance_id})")
+
+    try:
+        eula_file = deploy_path / "EULA.md"
+        privacy_file = deploy_path / "PRIVACY.md"
+        eula_confirm_file = deploy_path / "eula.confirmed"
+        privacy_confirm_file = deploy_path / "privacy.confirmed"
+
+        # 检查EULA文件是否存在并计算哈希值
+        if eula_file.exists():
+            with open(eula_file, "r", encoding="utf-8") as f:
+                eula_content = f.read()
+            eula_hash = hashlib.md5(eula_content.encode("utf-8")).hexdigest()
+
+            # 创建EULA确认文件
+            eula_confirm_file.write_text(eula_hash, encoding="utf-8")
+            logger.info(
+                f"成功创建EULA确认文件: {eula_confirm_file} (实例ID: {instance_id})"
+            )
+        else:
+            logger.warning(
+                f"EULA.md 文件不存在，跳过EULA确认文件创建 (实例ID: {instance_id})"
+            )
+
+        # 检查隐私政策文件是否存在并计算哈希值
+        if privacy_file.exists():
+            with open(privacy_file, "r", encoding="utf-8") as f:
+                privacy_content = f.read()
+            privacy_hash = hashlib.md5(privacy_content.encode("utf-8")).hexdigest()
+
+            # 创建隐私政策确认文件
+            privacy_confirm_file.write_text(privacy_hash, encoding="utf-8")
+            logger.info(
+                f"成功创建隐私政策确认文件: {privacy_confirm_file} (实例ID: {instance_id})"
+            )
+        else:
+            logger.warning(
+                f"PRIVACY.md 文件不存在，跳过隐私政策确认文件创建 (实例ID: {instance_id})"
+            )
+
+        logger.info(f"用户协议和隐私政策确认文件创建完成 (实例ID: {instance_id})")
+        return True
+
+    except Exception as e:
+        logger.error(f"创建用户协议和隐私政策确认文件失败 (实例ID: {instance_id}): {e}")
+        return False
 
 
 def setup_service_virtual_environment(
@@ -39,7 +357,6 @@ def setup_service_virtual_environment(
                 f"服务目录 {service_dir} 不存在 (服务: {service_name}, 实例ID: {instance_id})"
             )
             return False
-
         logger.info(
             f"切换工作目录到: {service_dir} (服务: {service_name}, 实例ID: {instance_id})"
         )
@@ -47,11 +364,23 @@ def setup_service_virtual_environment(
         # 创建虚拟环境目录路径
         venv_path = service_dir / "venv"
 
+        # 获取正确的Python解释器路径
+        try:
+            python_executable = get_python_executable()
+        except RuntimeError as e:
+            logger.error(
+                f"获取Python解释器失败 (服务: {service_name}, 实例ID: {instance_id}): {e}"
+            )
+            return False
+
         # 1. 创建虚拟环境
         logger.info(
             f"创建虚拟环境 {venv_path} (服务: {service_name}, 实例ID: {instance_id})"
         )
-        create_venv_cmd = [sys.executable, "-m", "venv", str(venv_path)]
+        logger.info(
+            f"使用Python解释器: {python_executable} (服务: {service_name}, 实例ID: {instance_id})"
+        )
+        create_venv_cmd = [python_executable, "-m", "venv", str(venv_path)]
 
         result = subprocess.run(
             create_venv_cmd,
@@ -79,28 +408,39 @@ def setup_service_virtual_environment(
             logger.info(
                 f"跳过依赖安装步骤 (服务: {service_name}, 实例ID: {instance_id})"
             )
-            return True
-
-        # 3. 安装依赖
+            return True  # 3. 安装依赖
         logger.info(f"开始安装依赖 (服务: {service_name}, 实例ID: {instance_id})")
 
         # 在Windows系统中，虚拟环境的Python和pip路径
         if os.name == "nt":
-            python_executable = venv_path / "Scripts" / "python.exe"
-            pip_executable = venv_path / "Scripts" / "pip.exe"
+            venv_python_executable = venv_path / "Scripts" / "python.exe"
+            venv_pip_executable = venv_path / "Scripts" / "pip.exe"
         else:
-            python_executable = venv_path / "bin" / "python"
-            pip_executable = venv_path / "bin" / "pip"
+            venv_python_executable = venv_path / "bin" / "python"
+            venv_pip_executable = venv_path / "bin" / "pip"
 
-        # 升级pip
+        # 验证虚拟环境中的Python可执行文件是否存在
+        if not venv_python_executable.exists():
+            logger.error(
+                f"虚拟环境Python可执行文件不存在: {venv_python_executable} (服务: {service_name}, 实例ID: {instance_id})"
+            )
+            return False
+
+        logger.info(
+            f"使用虚拟环境Python: {venv_python_executable} (服务: {service_name}, 实例ID: {instance_id})"
+        )  # 升级pip
         logger.info(f"升级pip (服务: {service_name}, 实例ID: {instance_id})")
         upgrade_pip_cmd = [
-            str(python_executable),
+            str(venv_python_executable),
             "-m",
             "pip",
             "install",
             "--upgrade",
             "pip",
+            "-i",
+            "https://mirrors.aliyun.com/pypi/simple/",
+            "--trusted-host",
+            "mirrors.aliyun.com",
         ]
 
         result = subprocess.run(
@@ -117,14 +457,18 @@ def setup_service_virtual_environment(
                 f"升级pip失败 (服务: {service_name}, 实例ID: {instance_id}): {result.stderr}"
             )
         else:
-            logger.info(f"pip升级成功 (服务: {service_name}, 实例ID: {instance_id})")
-
-        # 安装requirements.txt中的依赖
+            logger.info(
+                f"pip升级成功 (服务: {service_name}, 实例ID: {instance_id})"
+            )  # 安装requirements.txt中的依赖
         install_deps_cmd = [
-            str(pip_executable),
+            str(venv_pip_executable),
             "install",
             "-r",
             str(requirements_file),
+            "-i",
+            "https://mirrors.aliyun.com/pypi/simple/",
+            "--trusted-host",
+            "mirrors.aliyun.com",
         ]
 
         logger.info(
@@ -186,6 +530,7 @@ class DeployManager:
         service_config: Dict[str, Any],
         instance_id: str,
         resolved_deploy_path: Path,
+        main_instance_port: str = None,
     ) -> bool:
         """
         部署单个服务的通用方法。
@@ -194,6 +539,7 @@ class DeployManager:
             service_config: 服务配置字典
             instance_id: 实例ID
             resolved_deploy_path: 主应用部署路径，用于清理时使用
+            main_instance_port: 主实例端口，用于配置服务连接
 
         Returns:
             bool: 部署成功返回True，失败返回False
@@ -292,6 +638,21 @@ class DeployManager:
                 shutil.rmtree(service_deploy_path, ignore_errors=True)
             return False
 
+        # 修改服务特定的配置文件
+        if service_name == "napcat-ada" and main_instance_port:
+            logger.info(f"开始修改 napcat-ada 配置文件 (实例ID: {instance_id})")
+            config_file_path = service_deploy_path / final_config_name
+            service_port = service_config.get("port", "8095")  # 默认使用8095端口
+
+            config_success = modify_napcat_config_file(
+                config_file_path, service_port, main_instance_port, instance_id
+            )
+            if not config_success:
+                logger.error(f"修改 napcat-ada 配置文件失败 (实例ID: {instance_id})")
+                if service_deploy_path.exists():
+                    shutil.rmtree(service_deploy_path, ignore_errors=True)
+                return False
+
         logger.info(
             f"服务 '{service_name}' 部署和虚拟环境设置成功 (实例ID: {instance_id})"
         )
@@ -305,35 +666,22 @@ class DeployManager:
         源代码将直接位于 deploy_path 下。
         """
         if deploy_path.exists() and any(deploy_path.iterdir()):
-            logger.warning(f"部署路径 {deploy_path} 已存在且非空。正在尝试清空...")
-            try:
-                # Enhanced directory clearing
-                for item in deploy_path.iterdir():
-                    if item.is_dir():
-                        # Attempt to remove read-only flags from .git directory contents
-                        if item.name == ".git":
-                            for root, dirs, files in os.walk(item, topdown=False):
-                                for name in files:
-                                    filename = os.path.join(root, name)
-                                    os.chmod(filename, stat.S_IWUSR)
-                                for name in dirs:
-                                    os.chmod(os.path.join(root, name), stat.S_IWUSR)
-                        shutil.rmtree(item, onexc=self._handle_remove_readonly)
-                    else:
-                        if not os.access(item, os.W_OK):
-                            os.chmod(item, stat.S_IWUSR)
-                        item.unlink()
-                logger.info(f"已清空已存在的部署路径 {deploy_path}")
-            except Exception as e:
-                logger.error(f"清空部署路径 {deploy_path} 失败: {e}")
-                return False
-
-        logger.info(f"准备在 {deploy_path} 创建目录（如果不存在）。")
+            logger.error(
+                f"部署路径 {deploy_path} 已存在且非空，无法继续部署。请清空目录后重试。"
+            )
+            return False
         deploy_path.mkdir(parents=True, exist_ok=True)
         logger.info(f"目录 {deploy_path} 已确认存在。")
 
+        # 获取正确的Git可执行文件路径
+        try:
+            git_executable = get_git_executable()
+        except RuntimeError as e:
+            logger.error(f"获取Git可执行文件失败: {e}")
+            return False
+
         clone_command = [
-            "git",
+            git_executable,
             "clone",
             "--branch",
             version_tag,
@@ -436,6 +784,7 @@ class DeployManager:
         deploy_path: Path,  # MODIFIED: Accept deploy_path directly
         instance_id: str,
         services_to_install: List[Dict[str, Any]],
+        instance_port: str,  # 新增: 实例端口参数
     ) -> bool:
         # MODIFIED: Updated log message and use resolved deploy_path
         resolved_deploy_path = deploy_path.resolve()
@@ -469,6 +818,15 @@ class DeployManager:
                 return False
 
         logger.info(f"代码已成功克隆到 {resolved_deploy_path} (实例ID: {instance_id})")
+
+        # 创建用户协议和隐私政策确认文件
+        confirmation_success = create_agreement_confirmation_files(
+            resolved_deploy_path, instance_id
+        )
+        if not confirmation_success:
+            logger.warning(
+                f"创建确认文件失败，但不影响部署继续进行 (实例ID: {instance_id})"
+            )
 
         config_dir = resolved_deploy_path / "config"
         template_dir = resolved_deploy_path / "template"
@@ -527,9 +885,17 @@ class DeployManager:
             shutil.rmtree(resolved_deploy_path, ignore_errors=True)  # 清理
             return False
 
-        logger.info(f"主应用文件部署完成 (实例ID: {instance_id})。开始处理服务部署...")
+        # 修改 .env 文件中的端口配置
+        logger.info(f"开始修改主程序 .env 文件端口配置 (实例ID: {instance_id})")
+        env_success = modify_env_file(env_final_file, instance_port, instance_id)
+        if not env_success:
+            logger.error(f"修改主程序 .env 文件失败 (实例ID: {instance_id})")
+            shutil.rmtree(resolved_deploy_path, ignore_errors=True)  # 清理
+            return False
 
-        # 服务部署逻辑 - 使用通用方法处理所有服务
+        logger.info(
+            f"主应用文件部署完成 (实例ID: {instance_id})。开始处理服务部署..."
+        )  # 服务部署逻辑 - 使用通用方法处理所有服务
         services_deployed = 0
         total_services = len(services_to_install)
         for service_config in services_to_install:
@@ -539,7 +905,7 @@ class DeployManager:
             )
 
             service_success = self._deploy_service(
-                service_config, instance_id, resolved_deploy_path
+                service_config, instance_id, resolved_deploy_path, instance_port
             )
             if not service_success:
                 logger.error(

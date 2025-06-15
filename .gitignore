@@ -9,6 +9,12 @@ __pycache__/
 data/
 config.toml
 .VSCodeCounter/
+
+# Generated log files (hash-named text files)
+*_main.txt
+*_napcat-*.txt
+# Pattern for hash-named log files
+[a-f0-9]*_*.txt
 # Distribution / packaging
 .Python
 build/
@@ -175,3 +181,12 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Generated log files
+logs/
+*_main.txt
+*_napcat-*.txt
+[0-9a-f]*_*.txt
+
+# MaiBot test
+~

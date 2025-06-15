@@ -15,10 +15,12 @@ from src.utils.database import engine
 from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 import httpx
-from src.tools.deploy_version import deploy_manager  # 导入部署管理器
+from src.tools.deploy_version import (
+    deploy_manager,
+    get_python_executable,
+)  # 导入部署管理器和Python路径检测器
 from pathlib import Path  # Add Path import
 import subprocess
-import sys
 import os
 import threading
 import asyncio
@@ -216,15 +218,16 @@ async def deploy_maibot(
     )
 
     instance_id_str = generate_instance_id(payload.instance_name)
-    logger.info(f"为实例 {payload.instance_name} 生成的 ID: {instance_id_str}")
-
-    # 初始化安装状态缓存
+    logger.info(
+        f"为实例 {payload.instance_name} 生成的 ID: {instance_id_str}"
+    )  # 初始化安装状态缓存
     update_install_status(instance_id_str, "preparing", 0, "正在准备部署...")
 
     with Session(engine) as session:
         existing_instance_check = session.exec(
             select(Instances).where(Instances.instance_id == instance_id_str)
         ).first()
+
         if existing_instance_check:
             logger.warning(
                 f"实例ID {instance_id_str} ({payload.instance_name}) 已存在。"
@@ -232,7 +235,11 @@ async def deploy_maibot(
             update_install_status(instance_id_str, "failed", 0, "实例已存在")
             raise HTTPException(
                 status_code=409,
-                detail=f"实例 '{payload.instance_name}' (ID: {instance_id_str}) 已存在。",
+                detail={
+                    "message": f"实例 '{payload.instance_name}' 已存在",
+                    "detail": f"实例ID {instance_id_str} 已在数据库中注册，请使用不同的实例名称或删除现有实例",
+                    "error_code": "INSTANCE_EXISTS",
+                },
             )
 
     # 将部署过程添加到后台任务
@@ -273,27 +280,29 @@ async def get_available_versions() -> AvailableVersionsResponse:
             response: httpx.Response = await client.get(url)
             response.raise_for_status()
             tags_data: List[Dict[str, Any]] = response.json()
-
             versions: List[str] = [
                 tag["name"]
                 for tag in tags_data
                 if "name" in tag
                 and isinstance(tag["name"], str)
-                and tag["name"].startswith("0.6")
+                and tag["name"].startswith("0.7")
                 and tag["name"] != "EasyInstall-windows"
             ]
             # 不再强制添加 "latest"
             if "main" not in versions:  # 仍然保留 main
                 versions.insert(0, "main")  # 将 main 放在列表开头
+            # 在版本列表最后添加 dev
+            versions.append("dev")
             logger.info(f"从 {source_name} 获取并过滤后的版本列表: {versions}")
             return versions
 
     try:
-        versions: List[str] = await fetch_versions_from_url(github_api_url, "GitHub")
-        # 如果过滤后没有0.6.x的版本，但有main，则返回main
-        if not any(v.startswith("0.6") for v in versions) and "main" in versions:
-            logger.info("GitHub 中未找到 0.6.x 版本，但存在 main 版本。")
-        elif not versions:  # 如果 GitHub 返回空列表（无0.6.x也无main）
+        versions: List[str] = await fetch_versions_from_url(
+            github_api_url, "GitHub"
+        )  # 如果过滤后没有0.7.x的版本，但有main，则返回main
+        if not any(v.startswith("0.7") for v in versions) and "main" in versions:
+            logger.info("GitHub 中未找到 0.7.x 版本，但存在 main 版本。")
+        elif not versions:  # 如果 GitHub 返回空列表（无0.7.x也无main）
             logger.warning("GitHub 未返回任何有效版本，尝试 Gitee。")
             raise httpx.RequestError(
                 "No valid versions from GitHub"
@@ -306,8 +315,8 @@ async def get_available_versions() -> AvailableVersionsResponse:
         )
         try:
             versions: List[str] = await fetch_versions_from_url(gitee_api_url, "Gitee")
-            if not any(v.startswith("0.6") for v in versions) and "main" in versions:
-                logger.info("Gitee 中未找到 0.6.x 版本，但存在 main 版本。")
+            if not any(v.startswith("0.7") for v in versions) and "main" in versions:
+                logger.info("Gitee 中未找到 0.7.x 版本，但存在 main 版本。")
             elif not versions:  # 如果 Gitee 也返回空列表
                 logger.warning("Gitee 未返回任何有效版本，返回默认版本。")
                 return AvailableVersionsResponse(
@@ -389,18 +398,81 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
     在后台执行部署任务的异步函数
     """
     try:
-        # 更新进度：开始部署
+        # 更新进度：验证安装路径
+        update_install_status(instance_id_str, "installing", 5, "正在验证安装路径...")
+
+        # 验证安装路径
+        deploy_path = Path(payload.install_path)
+
+        # 记录收到的路径信息
+        logger.info(f"收到部署路径: {payload.install_path} (实例ID: {instance_id_str})")
+        logger.info(
+            f"解析后的绝对路径: {deploy_path.resolve()} (实例ID: {instance_id_str})"
+        )
+
+        # 检查父目录是否存在，如果不存在则尝试创建
+        if not deploy_path.parent.exists():
+            logger.info(
+                f"父目录不存在，尝试创建: {deploy_path.parent} (实例ID: {instance_id_str})"
+            )
+            try:
+                deploy_path.parent.mkdir(parents=True, exist_ok=True)
+                logger.info(
+                    f"成功创建父目录: {deploy_path.parent} (实例ID: {instance_id_str})"
+                )
+            except Exception as e:
+                logger.error(
+                    f"创建父目录失败 {deploy_path.parent}: {e} (实例ID: {instance_id_str})"
+                )
+                update_install_status(
+                    instance_id_str, "failed", 5, f"无法创建安装路径: {str(e)}"
+                )
+                return
+
+        # 检查目标路径是否已存在实例
+        if deploy_path.exists() and any(deploy_path.iterdir()):
+            logger.warning(
+                f"目标路径已存在文件: {deploy_path} (实例ID: {instance_id_str})"
+            )
+            # 不强制失败，允许覆盖安装（但记录警告）
+            logger.info(
+                f"继续部署到现有路径，可能会覆盖文件 (实例ID: {instance_id_str})"
+            )
+
+        # 验证路径权限（尝试在目标路径创建测试文件）
+        try:
+            test_file = deploy_path.parent / f"test_write_{instance_id_str}.tmp"
+            test_file.touch()
+            test_file.unlink()
+            logger.info(f"路径权限验证通过 (实例ID: {instance_id_str})")
+        except Exception as e:
+            logger.error(f"路径权限验证失败: {e} (实例ID: {instance_id_str})")
+            update_install_status(
+                instance_id_str, "failed", 5, f"路径权限不足: {str(e)}"
+            )
+            return
+
+        # 更新进度：开始下载
         update_install_status(
-            instance_id_str, "installing", 10, "正在下载并部署 MaiBot..."
+            instance_id_str, "installing", 10, "正在连接到代码仓库..."
+        )
+
+        # 更新进度：准备部署文件
+        update_install_status(
+            instance_id_str, "installing", 15, "正在下载 MaiBot 源代码..."
         )
 
         # 使用 deploy_manager 执行实际部署操作
         # 将 payload.install_path 替换为 instance_id_str
         # 并且传入 payload.install_services
-        deploy_path = Path(payload.install_path)  # Create Path object for deploy_path
-
         # 在线程池中执行同步的部署操作，避免阻塞事件循环
         loop = asyncio.get_event_loop()
+
+        # 更新进度：开始解压和配置
+        update_install_status(
+            instance_id_str, "installing", 25, "正在解压和配置文件..."
+        )
+
         deploy_success = await loop.run_in_executor(
             None,
             deploy_manager.deploy_version,
@@ -408,22 +480,31 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
             deploy_path,
             instance_id_str,
             [service.model_dump() for service in payload.install_services],
+            str(payload.port),  # 添加缺失的 instance_port 参数
         )
 
         if not deploy_success:
             logger.error(
                 f"使用 deploy_manager 部署版本 {payload.version} 到实例 {instance_id_str} 失败。"
             )
-            update_install_status(instance_id_str, "failed", 0, "MaiBot 部署失败")
+            update_install_status(instance_id_str, "failed", 25, "MaiBot 部署失败")
             return
+
+        # 更新进度：部署文件完成
+        update_install_status(
+            instance_id_str,
+            "installing",
+            35,
+            "MaiBot 文件部署完成，正在验证文件完整性...",
+        )
 
         logger.info(
             f"版本 {payload.version} 已成功部署到 {payload.install_path}。现在设置虚拟环境..."
         )
 
-        # 更新进度：部署完成，开始设置环境
+        # 更新进度：开始环境配置
         update_install_status(
-            instance_id_str, "installing", 40, "MaiBot 部署完成，正在设置虚拟环境..."
+            instance_id_str, "installing", 40, "文件验证完成，正在准备 Python 环境..."
         )
 
         # 设置虚拟环境并安装依赖
@@ -440,14 +521,37 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
         # 更新进度：虚拟环境设置完成
         update_install_status(
             instance_id_str, "installing", 80, "虚拟环境设置完成，正在保存实例信息..."
-        )
-
-        # 在数据库中保存实例信息
+        )  # 在数据库中保存实例信息
         await save_instance_to_database(payload, instance_id_str)
 
     except Exception as e:
         logger.error(f"后台部署任务发生异常 (实例ID: {instance_id_str}): {e}")
-        update_install_status(instance_id_str, "failed", 0, f"部署失败: {str(e)}")
+
+        # 构建详细的错误信息
+        error_details = {
+            "message": "部署过程中发生错误",
+            "detail": str(e),
+            "error_type": type(e).__name__,
+            "instance_id": instance_id_str,
+        }
+
+        # 根据异常类型提供更具体的错误信息
+        if "permission" in str(e).lower() or "access" in str(e).lower():
+            error_details["message"] = "权限不足或文件访问被拒绝"
+            error_details["suggestion"] = "请检查安装路径的写入权限，或以管理员身份运行"
+        elif "network" in str(e).lower() or "connection" in str(e).lower():
+            error_details["message"] = "网络连接失败"
+            error_details["suggestion"] = "请检查网络连接，稍后重试"
+        elif "disk" in str(e).lower() or "space" in str(e).lower():
+            error_details["message"] = "磁盘空间不足"
+            error_details["suggestion"] = "请释放磁盘空间后重试"
+
+        update_install_status(
+            instance_id_str,
+            "failed",
+            0,
+            f"{error_details['message']}: {error_details['detail']}",
+        )
 
 
 async def save_instance_to_database(payload: DeployRequest, instance_id_str: str):
@@ -455,12 +559,15 @@ async def save_instance_to_database(payload: DeployRequest, instance_id_str: str
     将实例信息保存到数据库
     """
     try:
+        # 更新状态：开始数据库操作
+        update_install_status(instance_id_str, "installing", 82, "正在创建实例信息...")
+
         with Session(engine) as session:
             new_instance_obj = instance_manager.create_instance(
                 name=payload.instance_name,
                 version=payload.version,
                 path=payload.install_path,
-                status=InstanceStatus.STARTING,
+                status=InstanceStatus.STOPPED,  # 初始状态为 STOPPED
                 port=payload.port,
                 instance_id=instance_id_str,
                 db_session=session,
@@ -470,10 +577,13 @@ async def save_instance_to_database(payload: DeployRequest, instance_id_str: str
                 logger.error(
                     f"通过 InstanceManager 创建实例 {payload.instance_name} (ID: {instance_id_str}) 失败，但未引发异常。"
                 )
-                update_install_status(instance_id_str, "failed", 80, "实例信息保存失败")
+                update_install_status(instance_id_str, "failed", 82, "实例信息保存失败")
                 return
 
-            # 初始化服务状态
+            # 更新状态：创建服务配置
+            update_install_status(
+                instance_id_str, "installing", 85, "正在配置服务信息..."
+            )  # 初始化服务状态
             services_status = []
             for service_config in payload.install_services:
                 db_service = Services(
@@ -496,7 +606,17 @@ async def save_instance_to_database(payload: DeployRequest, instance_id_str: str
                     }
                 )
 
+            # 更新状态：提交数据库事务
+            update_install_status(
+                instance_id_str, "installing", 90, "正在保存配置到数据库..."
+            )
+
             session.commit()
+
+            # 更新状态：最终完成
+            update_install_status(
+                instance_id_str, "installing", 95, "正在完成最后配置..."
+            )
 
             # 更新进度：完成部署
             update_install_status(
@@ -541,14 +661,34 @@ async def setup_virtual_environment_background(
             update_install_status(instance_id, "failed", 45, "安装目录不存在")
             return False
 
+        # 更新状态：验证安装目录
+        update_install_status(
+            instance_id, "installing", 47, "安装目录验证完成，正在初始化虚拟环境..."
+        )
+
         logger.info(f"切换工作目录到: {install_dir} (实例ID: {instance_id})")
 
         # 创建虚拟环境目录路径
         venv_path = install_dir / "venv"
 
-        # 1. 创建虚拟环境
+        # 更新状态：开始创建虚拟环境
+        update_install_status(
+            instance_id, "installing", 50, "正在创建 Python 虚拟环境..."
+        )  # 1. 创建虚拟环境
         logger.info(f"创建虚拟环境 {venv_path} (实例ID: {instance_id})")
-        create_venv_cmd = [sys.executable, "-m", "venv", str(venv_path)]
+
+        # 获取正确的Python解释器路径
+        try:
+            python_executable = get_python_executable()
+        except RuntimeError as e:
+            logger.error(f"获取Python解释器失败 (实例ID: {instance_id}): {e}")
+            update_install_status(
+                instance_id, "failed", 50, f"Python解释器获取失败: {str(e)}"
+            )
+            return False
+
+        logger.info(f"使用Python解释器: {python_executable} (实例ID: {instance_id})")
+        create_venv_cmd = [python_executable, "-m", "venv", str(venv_path)]
 
         # 在线程池中执行虚拟环境创建，避免阻塞事件循环
         loop = asyncio.get_event_loop()
@@ -586,13 +726,14 @@ async def setup_virtual_environment_background(
             update_install_status(
                 instance_id, "installing", 75, "未找到依赖文件，跳过依赖安装"
             )
-            return True
-
-        # 更新状态：开始安装依赖
-        update_install_status(instance_id, "installing", 60, "正在升级pip...")
+            return True  # 更新状态：开始安装依赖
+        update_install_status(instance_id, "installing", 58, "正在准备依赖安装...")
 
         # 3. 安装依赖
         logger.info(f"开始安装依赖 (实例ID: {instance_id})")
+
+        # 更新状态：正在升级pip
+        update_install_status(instance_id, "installing", 60, "正在升级pip...")
 
         # 在Windows系统中，虚拟环境的Python和pip路径
         if os.name == "nt":
@@ -600,9 +741,7 @@ async def setup_virtual_environment_background(
             pip_executable = venv_path / "Scripts" / "pip.exe"
         else:
             python_executable = venv_path / "bin" / "python"
-            pip_executable = venv_path / "bin" / "pip"
-
-        # 升级pip
+            pip_executable = venv_path / "bin" / "pip"  # 升级pip
         logger.info(f"升级pip (实例ID: {instance_id})")
         upgrade_pip_cmd = [
             str(python_executable),
@@ -611,6 +750,10 @@ async def setup_virtual_environment_background(
             "install",
             "--upgrade",
             "pip",
+            "-i",
+            "https://mirrors.aliyun.com/pypi/simple/",
+            "--trusted-host",
+            "mirrors.aliyun.com",
         ]
 
         result = await loop.run_in_executor(
@@ -636,17 +779,27 @@ async def setup_virtual_environment_background(
                 instance_id, "installing", 65, "pip升级成功，正在安装依赖..."
             )
 
-        # 安装requirements.txt中的依赖
+        # 更新状态：开始安装依赖包
+        update_install_status(
+            instance_id, "installing", 68, "正在安装 Python 依赖包..."
+        )  # 安装requirements.txt中的依赖
         install_deps_cmd = [
             str(pip_executable),
             "install",
             "-r",
             str(requirements_file),
+            "-i",
+            "https://mirrors.aliyun.com/pypi/simple/",
+            "--trusted-host",
+            "mirrors.aliyun.com",
         ]
 
         logger.info(
             f"执行依赖安装命令: {' '.join(install_deps_cmd)} (实例ID: {instance_id})"
         )
+
+        # 更新状态：正在执行依赖安装
+        update_install_status(instance_id, "installing", 70, "正在执行依赖安装命令...")
 
         result = await loop.run_in_executor(
             None,
@@ -662,14 +815,19 @@ async def setup_virtual_environment_background(
 
         if result.returncode != 0:
             logger.error(f"依赖安装失败 (实例ID: {instance_id}): {result.stderr}")
-            update_install_status(instance_id, "failed", 65, "依赖安装失败")
+            update_install_status(instance_id, "failed", 70, "依赖安装失败")
             return False
+
+        # 更新状态：依赖安装成功
+        update_install_status(
+            instance_id, "installing", 73, "依赖安装成功，正在验证安装结果..."
+        )
 
         logger.info(f"依赖安装成功 (实例ID: {instance_id})")
         logger.info(f"虚拟环境设置完成 (实例ID: {instance_id})")
 
         # 更新状态：虚拟环境设置完成
-        update_install_status(instance_id, "installing", 75, "依赖安装完成")
+        update_install_status(instance_id, "installing", 75, "虚拟环境配置完成")
 
         return True
 
@@ -698,30 +856,90 @@ def generate_venv_command(base_command: str, working_directory: str) -> str:
         logger.warning(f"虚拟环境不存在于 {venv_path}，将使用原始命令")
         return base_command
 
+    # 检查虚拟环境是否为目录
+    if not venv_path.is_dir():
+        logger.warning(f"虚拟环境路径 {venv_path} 不是目录，将使用原始命令")
+        return base_command
+
     # 根据操作系统生成不同的激活命令
     if os.name == "nt":  # Windows
-        # 检查虚拟环境的Python可执行文件是否存在
+        # 检查虚拟环境的Python可执行文件是否存在且可执行
         venv_python = venv_path / "Scripts" / "python.exe"
-        if venv_python.exists():
+        if venv_python.exists() and venv_python.is_file():
+            try:
+                # 测试Python可执行文件是否可用
+                test_result = subprocess.run(
+                    [str(venv_python), "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+                if test_result.returncode != 0:
+                    logger.warning(
+                        f"虚拟环境Python可执行文件 {venv_python} 无法正常运行，将使用原始命令"
+                    )
+                    return base_command
+            except (
+                subprocess.TimeoutExpired,
+                subprocess.SubprocessError,
+                OSError,
+            ) as e:
+                logger.warning(
+                    f"测试虚拟环境Python可执行文件 {venv_python} 时出错: {e}，将使用原始命令"
+                )
+                return base_command
+
             # 直接使用虚拟环境中的Python可执行文件
-            # 替换命令中的 "python" 为虚拟环境中的python路径
+            # 替换命令中的 "python" 为虚拟环境中的python路径，并添加引号
             if base_command.startswith("python "):
-                venv_command = str(venv_python) + base_command[6:]  # 去掉 "python"
+                venv_command = (
+                    f'"{str(venv_python)}"{base_command[6:]}'  # 去掉 "python"，添加引号
+                )
             elif base_command == "python":
-                venv_command = str(venv_python)
+                venv_command = f'"{str(venv_python)}"'  # 添加引号
             else:
                 # 如果命令不是以python开头，使用激活脚本的方式
                 activate_script = venv_path / "Scripts" / "activate.bat"
-                venv_command = f'cmd /c "{activate_script} && {base_command}"'
+                if activate_script.exists():
+                    venv_command = f'cmd /c "{activate_script} && {base_command}"'
+                else:
+                    logger.warning(
+                        f"虚拟环境激活脚本 {activate_script} 不存在，将使用原始命令"
+                    )
+                    return base_command
         else:
             logger.warning(
-                f"虚拟环境Python可执行文件不存在于 {venv_python}，将使用原始命令"
+                f"虚拟环境Python可执行文件不存在或不是文件: {venv_python}，将使用原始命令"
             )
             return base_command
     else:  # Linux/Unix
-        # 检查虚拟环境的Python可执行文件是否存在
+        # 检查虚拟环境的Python可执行文件是否存在且可执行
         venv_python = venv_path / "bin" / "python"
-        if venv_python.exists():
+        if venv_python.exists() and venv_python.is_file():
+            try:
+                # 测试Python可执行文件是否可用
+                test_result = subprocess.run(
+                    [str(venv_python), "--version"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                if test_result.returncode != 0:
+                    logger.warning(
+                        f"虚拟环境Python可执行文件 {venv_python} 无法正常运行，将使用原始命令"
+                    )
+                    return base_command
+            except (
+                subprocess.TimeoutExpired,
+                subprocess.SubprocessError,
+                OSError,
+            ) as e:
+                logger.warning(
+                    f"测试虚拟环境Python可执行文件 {venv_python} 时出错: {e}，将使用原始命令"
+                )
+                return base_command
+
             # 直接使用虚拟环境中的Python可执行文件
             if base_command.startswith("python "):
                 venv_command = str(venv_python) + base_command[6:]  # 去掉 "python"
@@ -730,10 +948,18 @@ def generate_venv_command(base_command: str, working_directory: str) -> str:
             else:
                 # 如果命令不是以python开头，使用激活脚本的方式
                 activate_script = venv_path / "bin" / "activate"
-                venv_command = f'bash -c "source {activate_script} && {base_command}"'
+                if activate_script.exists():
+                    venv_command = (
+                        f'bash -c "source {activate_script} && {base_command}"'
+                    )
+                else:
+                    logger.warning(
+                        f"虚拟环境激活脚本 {activate_script} 不存在，将使用原始命令"
+                    )
+                    return base_command
         else:
             logger.warning(
-                f"虚拟环境Python可执行文件不存在于 {venv_python}，将使用原始命令"
+                f"虚拟环境Python可执行文件不存在或不是文件: {venv_python}，将使用原始命令"
             )
             return base_command
 

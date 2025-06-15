@@ -10,7 +10,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('data', 'data'), ('src', 'src')],
+    datas=[('data', 'data'), ('src', 'src'), ('assets', 'assets')],
     hiddenimports=[
         'uvicorn',
         'fastapi',
@@ -23,7 +23,12 @@ a = Analysis(
         'toml',
         'loguru',
         'websockets',
-        'psutil'
+        'psutil',
+        'pystray',
+        'PIL',
+        'PIL.Image',
+        'PIL.ImageDraw',
+        'threading'
     ],
     hookspath=[],
     hooksconfig={},
@@ -47,7 +52,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

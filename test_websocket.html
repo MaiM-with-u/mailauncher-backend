@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>WebSocket Test</title>
+  </head>
+  <body>
+    <h1>WebSocket连接测试</h1>
+    <div id="status">准备连接...</div>
+    <div id="messages"></div>
+    <input type="text" id="messageInput" placeholder="输入测试消息" />
+    <button onclick="sendMessage()">发送</button>
+    <button onclick="testTerminalConnection()">测试终端连接</button>
+
+    <script>
+      let ws = null;
+      const statusDiv = document.getElementById("status");
+      const messagesDiv = document.getElementById("messages");
+      const messageInput = document.getElementById("messageInput");
+
+      function addMessage(msg) {
+        const div = document.createElement("div");
+        div.innerHTML = `<strong>${new Date().toLocaleTimeString()}</strong>: ${msg}`;
+        messagesDiv.appendChild(div);
+      }
+
+      function testTerminalConnection() {
+        const sessionId = "c417c245e20331d7cb110aaf56da98a5634700ed_main";
+        const wsUrl = `ws://localhost:23456/api/v1/ws/${sessionId}`;
+
+        addMessage(`尝试连接到: ${wsUrl}`);
+        statusDiv.textContent = "正在连接...";
+
+        if (ws) {
+          ws.close();
+        }
+
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = function (event) {
+          statusDiv.textContent = "连接成功!";
+          addMessage("WebSocket连接已建立");
+        };
+
+        ws.onmessage = function (event) {
+          addMessage(`收到消息: ${event.data}`);
+        };
+
+        ws.onclose = function (event) {
+          statusDiv.textContent = `连接已关闭 (代码: ${event.code})`;
+          addMessage(`连接关闭: ${event.code} - ${event.reason}`);
+        };
+
+        ws.onerror = function (error) {
+          statusDiv.textContent = "连接错误";
+          addMessage(`连接错误: ${error}`);
+        };
+      }
+
+      function sendMessage() {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          const message = messageInput.value;
+          ws.send(
+            JSON.stringify({
+              type: "input",
+              data: message + "\n",
+            })
+          );
+          addMessage(`发送: ${message}`);
+          messageInput.value = "";
+        } else {
+          addMessage("WebSocket未连接");
+        }
+      }
+
+      // 监听回车键
+      messageInput.addEventListener("keypress", function (e) {
+        if (e.key === "Enter") {
+          sendMessage();
+        }
+      });
+    </script>
+  </body>
+</html>

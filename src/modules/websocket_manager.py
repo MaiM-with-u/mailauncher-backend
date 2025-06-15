@@ -5,6 +5,8 @@ from winpty import PtyProcess  # type: ignore
 import json
 from typing import Dict, Any, Tuple, Optional
 import logging
+import time
+import os
 
 from src.utils.database import Database, get_db_instance
 from src.modules.instance_manager import instance_manager, InstanceStatus
@@ -18,6 +20,105 @@ PTY_ROWS_DEFAULT = 25
 
 active_ptys: Dict[str, Dict[str, Any]] = {}
 active_ptys_lock = asyncio.Lock()
+
+# 日志存储和历史恢复功能
+LOG_DIR = "logs"
+
+
+def ensure_log_directory():
+    """确保日志目录存在"""
+    if not os.path.exists(LOG_DIR):
+        os.makedirs(LOG_DIR)
+
+
+def get_log_file_path(session_id: str) -> str:
+    """获取会话的日志文件路径"""
+    ensure_log_directory()
+    return os.path.join(LOG_DIR, f"{session_id}.txt")
+
+
+async def store_log_to_file(session_id: str, data: str):
+    """将日志数据存储到文件"""
+    try:
+        timestamp = int(time.time() * 1000)
+        log_entry = f"{timestamp}:{data}"
+
+        log_file_path = get_log_file_path(session_id)
+
+        # 异步写入文件
+        def write_log():
+            with open(log_file_path, "a", encoding="utf-8") as f:
+                f.write(log_entry)
+
+        await asyncio.to_thread(write_log)
+
+    except Exception as e:
+        logger.error(f"存储日志到文件时出错 (会话 {session_id}): {e}")
+
+
+async def send_history_logs(
+    websocket: WebSocket,
+    session_id: str,
+    from_time: float,
+    db: Database,
+    to_time: Optional[float] = None,
+):
+    """发送历史日志到WebSocket客户端"""
+    try:
+        if websocket.client_state != WebSocketState.CONNECTED:
+            return
+
+        log_file_path = get_log_file_path(session_id)
+
+        if not os.path.exists(log_file_path):
+            logger.info(f"会话 {session_id} 的日志文件不存在，跳过历史日志发送")
+            return
+
+        # 异步读取和过滤日志
+        def read_and_filter_logs():
+            filtered_logs = []
+            try:
+                with open(log_file_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+
+                        # 解析时间戳和数据
+                        if ":" in line:
+                            timestamp_str, data = line.split(":", 1)
+                            try:
+                                timestamp = float(timestamp_str)
+
+                                # 时间过滤
+                                if timestamp >= from_time:
+                                    if to_time is None or timestamp <= to_time:
+                                        filtered_logs.append(
+                                            {"timestamp": timestamp, "data": data}
+                                        )
+
+                            except ValueError:
+                                continue
+
+            except Exception as e:
+                logger.error(f"读取日志文件时出错 (会话 {session_id}): {e}")
+
+            return filtered_logs
+
+        logs = await asyncio.to_thread(read_and_filter_logs)
+
+        if logs:
+            # 发送历史日志
+            await websocket.send_json(
+                {"type": "history_logs", "logs": logs, "session_id": session_id}
+            )
+
+            logger.info(f"已发送 {len(logs)} 条历史日志到会话 {session_id}")
+        else:
+            logger.info(f"会话 {session_id} 没有符合条件的历史日志")
+
+    except Exception as e:
+        logger.error(f"发送历史日志时出错 (会话 {session_id}): {e}")
 
 
 async def get_pty_command_and_cwd_from_instance(
@@ -56,17 +157,20 @@ async def get_pty_command_and_cwd_from_instance(
             f"为 'main' 类型 (实例 '{instance_short_id}') 配置 PTY: 基础命令='{base_command}', 虚拟环境命令='{pty_command}', CWD='{pty_cwd}'"
         )
     else:  # Adapter/Service PTY configuration (type_part is the service name)
-        logger.info(f"为服务 '{type_part}' (实例 '{instance_short_id}') 配置 PTY。")
-
-        # 1. 获取实例的已安装服务列表
-        installed_service_names = instance_manager.get_instance_services(
-            instance_short_id
-        )
-        if not isinstance(installed_service_names, list):
+        logger.info(
+            f"为服务 '{type_part}' (实例 '{instance_short_id}') 配置 PTY。"
+        )  # 1. 获取实例的已安装服务列表
+        installed_services = instance_manager.get_instance_services(instance_short_id)
+        if not isinstance(installed_services, list):
             logger.error(
                 f"获取实例 '{instance_short_id}' 的服务列表失败或返回格式不正确。无法验证服务 '{type_part}'"
             )
             return None, None, status_value
+
+        # 提取服务名称列表
+        installed_service_names = [
+            service.get("name") for service in installed_services if service.get("name")
+        ]
 
         # 2. 检查请求的服务是否在已安装列表中
         if type_part not in installed_service_names:
@@ -126,11 +230,11 @@ async def get_pty_command_and_cwd_from_instance(
     return pty_command, pty_cwd, status_value
 
 
-async def pty_output_to_websocket(
+async def pty_output_to_websocket_and_db(
     session_id: str, pty_process: PtyProcess, websocket: WebSocket, db: Database
 ):
     """
-    读取 PTY 输出，将其发送到 WebSocket (FastAPI version)。不再存储到数据库。
+    读取 PTY 输出，将其发送到 WebSocket 并存储到日志文件 (FastAPI version)。
     """
     try:
         while True:
@@ -156,6 +260,9 @@ async def pty_output_to_websocket(
                         f"会话 {session_id} 的 PTY 返回了未知类型的数据: {type(data)}"
                     )
                     str_data = str(data)
+
+                # 存储到日志文件
+                await store_log_to_file(session_id, str_data)
 
                 if websocket.client_state == WebSocketState.CONNECTED:
                     try:
@@ -195,13 +302,15 @@ async def handle_websocket_connection(
     """
     处理单个 WebSocket 连接 (FastAPI version)。
     session_id 是从路径中提取的部分，例如 "yourinstanceid_main"。
-    不再发送历史日志。
-    创建虚拟终端但不直接执行命令，等待前端调用实例启动API后才开始运行。
+    现在支持历史日志恢复。
     """
     await websocket.accept()
     logger.info(
         f"客户端已连接 (FastAPI)，会话 ID: {session_id}，来自 {websocket.client.host}:{websocket.client.port}"
     )
+
+    # 初始化历史日志发送标记，防止重复发送
+    websocket._history_logs_sent = False
 
     # 解析 session_id 获取实例 ID 和类型
     parts = session_id.rpartition("_")
@@ -228,77 +337,82 @@ async def handle_websocket_connection(
     pty_process: Optional[PtyProcess] = None
     read_task: Optional[asyncio.Task] = None
 
-    try:
-        # 检查是否已经有活跃的 PTY 进程
+    try:  # 检查是否已经有活跃的 PTY 进程
+        existing_pty_info = None
         async with active_ptys_lock:
             if (
                 session_id in active_ptys
                 and active_ptys[session_id].get("pty")
                 and active_ptys[session_id]["pty"].isalive()
             ):
-                # PTY 已存在，直接连接到现有进程
-                pty_info = active_ptys[session_id]
-                pty_process = pty_info["pty"]
+                existing_pty_info = active_ptys[session_id]
 
-                # 更新 WebSocket 连接
-                pty_info["ws"] = websocket
+        if existing_pty_info:
+            # PTY 已存在，直接连接到现有进程
+            pty_process = existing_pty_info["pty"]
 
-                logger.info(f"连接到现有的 PTY 进程 (会话: {session_id})")
+            # 更新 WebSocket 连接（在锁外更新）
+            async with active_ptys_lock:
+                if session_id in active_ptys:
+                    active_ptys[session_id]["ws"] = websocket
 
-                # 如果 PTY 已经在运行命令，启动输出读取任务
-                if pty_info.get("command_started", False):
-                    read_task = asyncio.create_task(
-                        pty_output_to_websocket(session_id, pty_process, websocket, db)
-                    )
-                    pty_info["output_task"] = read_task
-            else:
-                # 创建新的虚拟终端，但不执行命令
-                logger.info(f"为会话 {session_id} 创建虚拟终端 (不执行命令)")
-
-                # 获取工作目录
-                pty_cwd = None
-                if type_part == "main":
-                    pty_cwd = instance.path
-                else:
-                    # 对于服务，从数据库获取服务详情
-                    service_details = await db.get_service_details(
-                        instance_short_id, type_part
-                    )
-                    if service_details and service_details.path:
-                        pty_cwd = service_details.path
-                    else:
-                        pty_cwd = instance.path  # 回退到实例路径
-
-                # 创建空的 PTY 进程（使用 cmd 作为默认 shell）
-                pty_process = PtyProcess.spawn(
-                    ["cmd.exe"],  # 使用 Windows cmd 作为默认 shell
-                    dimensions=(PTY_ROWS_DEFAULT, PTY_COLS_DEFAULT),
-                    cwd=pty_cwd,
-                )
-                logger.info(
-                    f"虚拟终端已创建 (会话: {session_id}, PID: {pty_process.pid})"
-                )
-
-                # 保存到 active_ptys，标记为未开始命令
-                async with active_ptys_lock:
-                    active_ptys[session_id] = {
-                        "pty": pty_process,
-                        "ws": websocket,
-                        "output_task": None,
-                        "instance_part": instance_short_id,
-                        "type_part": type_part,
-                        "command_started": False,  # 标记命令尚未开始
-                        "working_directory": pty_cwd,
-                    }
-
-                # 启动输出读取任务（用于显示 shell 提示符）
+            logger.info(
+                f"连接到现有的 PTY 进程 (会话: {session_id})"
+            )  # 如果 PTY 已经在运行命令，启动输出读取任务
+            if existing_pty_info.get("command_started", False):
                 read_task = asyncio.create_task(
-                    pty_output_to_websocket(session_id, pty_process, websocket, db)
+                    pty_output_to_websocket_and_db(
+                        session_id, pty_process, websocket, db
+                    )
                 )
-
                 async with active_ptys_lock:
                     if session_id in active_ptys:
                         active_ptys[session_id]["output_task"] = read_task
+        else:
+            # 创建新的虚拟终端，但不执行命令
+            logger.info(f"为会话 {session_id} 创建虚拟终端 (不执行命令)")
+
+            # 获取工作目录
+            pty_cwd = None
+            if type_part == "main":
+                pty_cwd = instance.path
+            else:
+                # 对于服务，从数据库获取服务详情
+                service_details = await db.get_service_details(
+                    instance_short_id, type_part
+                )
+                if service_details and service_details.path:
+                    pty_cwd = service_details.path
+                else:
+                    pty_cwd = instance.path  # 回退到实例路径
+
+            # 创建空的 PTY 进程（使用 cmd 作为默认 shell）
+            pty_process = PtyProcess.spawn(
+                ["cmd.exe"],  # 使用 Windows cmd 作为默认 shell
+                dimensions=(PTY_ROWS_DEFAULT, PTY_COLS_DEFAULT),
+                cwd=pty_cwd,
+            )
+            logger.info(
+                f"虚拟终端已创建 (会话: {session_id}, PID: {pty_process.pid})"
+            )  # 保存到 active_ptys，标记为未开始命令
+            async with active_ptys_lock:
+                active_ptys[session_id] = {
+                    "pty": pty_process,
+                    "ws": websocket,
+                    "output_task": None,
+                    "instance_part": instance_short_id,
+                    "type_part": type_part,
+                    "command_started": False,  # 标记命令尚未开始
+                    "working_directory": pty_cwd,
+                }  # 启动输出读取任务（用于显示 shell 提示符）
+            read_task = asyncio.create_task(
+                pty_output_to_websocket_and_db(session_id, pty_process, websocket, db)
+            )
+
+            # 更新输出任务（使用单独的锁操作）
+            async with active_ptys_lock:
+                if session_id in active_ptys:
+                    active_ptys[session_id]["output_task"] = read_task
 
         if not pty_process:
             err_msg = f"无法创建虚拟终端 (会话: {session_id})"
@@ -354,6 +468,48 @@ async def handle_websocket_connection(
                                             }
                                         )
                                     break
+                    elif msg_type == "ping":
+                        # 处理心跳ping消息
+                        timestamp = msg_data.get("timestamp", time.time() * 1000)
+                        connection_start_time = msg_data.get("connectionStartTime")
+
+                        # 发送pong响应
+                        if websocket.client_state == WebSocketState.CONNECTED:
+                            await websocket.send_json(
+                                {
+                                    "type": "pong",
+                                    "timestamp": timestamp,
+                                    "server_time": time.time() * 1000,
+                                }
+                            )  # 只在首次心跳且包含连接开始时间时发送历史日志
+                        # 避免每次心跳都发送历史日志
+                        if connection_start_time:
+                            if (
+                                not hasattr(websocket, "_history_logs_sent")
+                                or not websocket._history_logs_sent
+                            ):
+                                # 首次心跳，发送历史日志并标记
+                                await send_history_logs(
+                                    websocket, session_id, connection_start_time, db
+                                )
+                                websocket._history_logs_sent = True
+                                logger.info(
+                                    f"首次心跳已发送历史日志到会话 {session_id}"
+                                )
+                            else:
+                                logger.debug(
+                                    f"会话 {session_id} 已发送过历史日志，跳过重复发送"
+                                )
+
+                    elif msg_type == "request_history":
+                        # 处理历史日志请求
+                        from_time = msg_data.get("fromTime")
+                        to_time = msg_data.get("toTime")
+                        if from_time and to_time:
+                            await send_history_logs(
+                                websocket, session_id, from_time, db, to_time
+                            )
+
                     elif msg_type == "resize":
                         cols = msg_data.get("cols", PTY_COLS_DEFAULT)
                         rows = msg_data.get("rows", PTY_ROWS_DEFAULT)
