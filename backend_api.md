@@ -4,8 +4,12 @@
 
 - [实例管理](#实例管理)
 - [部署 API](#部署API)
-- [日志 API](#日志API)
 - [系统 API](#系统API)
+- [MaiBot 资源管理 API](#MaiBot资源管理API)
+  - [🎨 Emoji 表情包管理](#🎨-emoji-表情包管理)
+  - [👤 用户信息管理](#👤-用户信息管理)
+  - [🛠️ 资源管理](#🛠️-资源管理)
+  - [📊 统计和批量获取 API](#📊-统计和批量获取-api)
 - [WebSocket 接口](#WebSocket接口)
 
 ## 实例管理
@@ -404,27 +408,777 @@
 }
 ```
 
-## WebSocket 接口
+## MaiBot 资源管理 API
 
-### 安装日志 WebSocket
+MaiBot 资源管理 API 提供对 MaiBot 实例数据库的 CRUD 操作，包括表情包管理和用户信息管理。
 
-- **路径**: `/api/v1/logs/ws`
-- **描述**: 通过 WebSocket 连接接收实时安装日志
-- **消息格式**:
+### 🎨 Emoji 表情包管理
+
+#### 创建表情包
+
+- **路径**: `/api/v1/resource/{instance_id}/emoji`
+- **方法**: `POST`
+- **描述**: 创建新的表情包记录
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+- **请求体**:
 
 ```json
 {
-  "time": "2023-10-15 10:00:00",
-  "level": "INFO",
-  "message": "正在安装依赖...",
-  "source": "install"
+    "full_path": "/path/to/emoji.png",
+    "format": "png",
+    "emoji_hash": "abc123def456",
+    "description": "开心的表情",
+    "emotion": "happy",
+    "record_time": 1672531200.0
 }
 ```
 
-### 实例日志 WebSocket
+- **响应**:
 
-- **路径**: `/api/v1/logs/instance/{id}/ws`
-- **描述**: 通过 WebSocket 连接接收指定实例的实时日志
+```json
+{
+    "status": "success",
+    "message": "表情包创建成功",
+    "data": {
+        "emoji_id": 123,
+        "person_id": "abc123def456"
+    }
+}
+```
+
+#### 根据ID获取表情包
+
+- **路径**: `/api/v1/resource/{instance_id}/emoji/{emoji_id}`
+- **方法**: `GET`
+- **描述**: 根据表情包ID获取表情包详细信息
 - **参数**:
-  - `id`: 实例ID（路径参数）
+  - `instance_id`: 实例ID（路径参数）
+  - `emoji_id`: 表情包ID（路径参数）
+- **响应**:
+
+```json
+{
+    "status": "success",
+    "data": {
+        "id": 123,
+        "full_path": "/path/to/emoji.png",
+        "format": "png",
+        "emoji_hash": "abc123def456",
+        "description": "开心的表情",
+        "query_count": 5,
+        "is_registered": 1,
+        "is_banned": 0,
+        "emotion": "happy",
+        "record_time": 1672531200.0,
+        "register_time": 1672531300.0,
+        "usage_count": 10,
+        "last_used_time": 1672531400.0
+    }
+}
+```
+
+#### 根据哈希获取表情包
+
+- **路径**: `/api/v1/resource/{instance_id}/emoji/hash`
+- **方法**: `POST`
+- **描述**: 根据表情包哈希值获取表情包详细信息
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+- **请求体**:
+
+```json
+{
+    "emoji_hash": "abc123def456"
+}
+```
+
+- **响应**: 同上面的获取表情包响应
+
+#### 搜索表情包
+
+- **路径**: `/api/v1/resource/{instance_id}/emoji/search`
+- **方法**: `POST`
+- **描述**: 根据条件搜索表情包
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+- **请求体**:
+
+```json
+{
+    "emotion": "happy",
+    "is_registered": 1,
+    "is_banned": 0,
+    "format": "png",
+    "description_like": "开心",
+    "limit": 50,
+    "offset": 0
+}
+```
+
+- **响应**:
+
+```json
+{
+    "status": "success",
+    "data": [
+        {
+            "id": 123,
+            "full_path": "/path/to/emoji.png",
+            "format": "png",
+            "emoji_hash": "abc123def456",
+            "description": "开心的表情",
+            "emotion": "happy",
+            "usage_count": 10
+        }
+    ],
+    "total_count": 1,
+    "limit": 50,
+    "offset": 0
+}
+```
+
+#### 更新表情包
+
+- **路径**: `/api/v1/resource/{instance_id}/emoji/{emoji_id}`
+- **方法**: `PUT`
+- **描述**: 更新表情包信息
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+  - `emoji_id`: 表情包ID（路径参数）
+- **请求体**:
+
+```json
+{
+    "description": "更新后的描述",
+    "emotion": "excited",
+    "is_registered": 1
+}
+```
+
+- **响应**:
+
+```json
+{
+    "status": "success",
+    "message": "表情包更新成功"
+}
+```
+
+#### 删除表情包
+
+- **路径**: `/api/v1/resource/{instance_id}/emoji/{emoji_id}`
+- **方法**: `DELETE`
+- **描述**: 删除表情包记录
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+  - `emoji_id`: 表情包ID（路径参数）
+- **响应**:
+
+```json
+{
+    "status": "success",
+    "message": "表情包删除成功"
+}
+```
+
+#### 增加表情包使用次数
+
+- **路径**: `/api/v1/resource/{instance_id}/emoji/{emoji_id}/usage`
+- **方法**: `POST`
+- **描述**: 增加表情包使用次数并更新最后使用时间
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+  - `emoji_id`: 表情包ID（路径参数）
+- **响应**:
+
+```json
+{
+    "status": "success",
+    "message": "使用统计更新成功"
+}
+```
+
+#### 增加表情包查询次数
+
+- **路径**: `/api/v1/resource/{instance_id}/emoji/{emoji_id}/query`
+- **方法**: `POST`
+- **描述**: 增加表情包查询次数
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+  - `emoji_id`: 表情包ID（路径参数）
+- **响应**:
+
+```json
+{
+    "status": "success",
+    "message": "查询统计更新成功"
+}
+```
+
+### 👤 用户信息管理
+
+#### 创建用户信息
+
+- **路径**: `/api/v1/resource/{instance_id}/person`
+- **方法**: `POST`
+- **描述**: 创建新的用户信息记录
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+- **请求体**:
+
+```json
+{
+    "person_id": "user_123456",
+    "platform": "qq",
+    "user_id": "123456789",
+    "person_name": "小明",
+    "name_reason": "活泼可爱",
+    "nickname": "小明同学",
+    "impression": "友善的用户",
+    "short_impression": "今天很开心",
+    "points": "100",
+    "know_times": 1672531200.0,
+    "know_since": 1672531200.0,
+    "last_know": 1672531200.0
+}
+```
+
+- **响应**:
+
+```json
+{
+    "status": "success",
+    "message": "用户信息创建成功",
+    "data": {
+        "record_id": 456,
+        "person_id": "user_123456"
+    }
+}
+```
+
+#### 根据记录ID获取用户信息
+
+- **路径**: `/api/v1/resource/{instance_id}/person/record/{record_id}`
+- **方法**: `GET`
+- **描述**: 根据记录ID获取用户信息
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+  - `record_id`: 记录ID（路径参数）
+- **响应**:
+
+```json
+{
+    "status": "success",
+    "data": {
+        "id": 456,
+        "person_id": "user_123456",
+        "person_name": "小明",
+        "platform": "qq",
+        "user_id": "123456789",
+        "nickname": "小明同学",
+        "impression": "友善的用户",
+        "points": "100",
+        "last_know": 1672531200.0
+    }
+}
+```
+
+#### 根据用户ID获取用户信息
+
+- **路径**: `/api/v1/resource/{instance_id}/person/{person_id}`
+- **方法**: `GET`
+- **描述**: 根据用户唯一ID获取用户信息
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+  - `person_id`: 用户唯一ID（路径参数）
+- **响应**: 同上面的用户信息响应
+
+#### 根据平台获取用户信息
+
+- **路径**: `/api/v1/resource/{instance_id}/person/platform`
+- **方法**: `POST`
+- **描述**: 根据平台和平台用户ID获取用户信息
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+- **请求体**:
+
+```json
+{
+    "platform": "qq",
+    "user_id": "123456789"
+}
+```
+
+- **响应**: 同上面的用户信息响应
+
+#### 搜索用户信息
+
+- **路径**: `/api/v1/resource/{instance_id}/person/search`
+- **方法**: `POST`
+- **描述**: 根据条件搜索用户信息
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+- **请求体**:
+
+```json
+{
+    "platform": "qq",
+    "person_name_like": "小明",
+    "nickname_like": "同学",
+    "impression_like": "友善",
+    "has_person_name": true,
+    "limit": 50,
+    "offset": 0
+}
+```
+
+- **响应**:
+
+```json
+{
+    "status": "success",
+    "data": [
+        {
+            "id": 456,
+            "person_id": "user_123456",
+            "person_name": "小明",
+            "platform": "qq",
+            "user_id": "123456789",
+            "nickname": "小明同学",
+            "impression": "友善的用户"
+        }
+    ],
+    "total_count": 1,
+    "limit": 50,
+    "offset": 0
+}
+```
+
+#### 更新用户信息
+
+- **路径**: `/api/v1/resource/{instance_id}/person/{person_id}`
+- **方法**: `PUT`
+- **描述**: 更新用户信息
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+  - `person_id`: 用户唯一ID（路径参数）
+- **请求体**:
+
+```json
+{
+    "person_name": "小明明",
+    "impression": "非常友善的用户",
+    "points": "150"
+}
+```
+
+- **响应**:
+
+```json
+{
+    "status": "success",
+    "message": "用户信息更新成功"
+}
+```
+
+#### 删除用户信息
+
+- **路径**: `/api/v1/resource/{instance_id}/person/{person_id}`
+- **方法**: `DELETE`
+- **描述**: 删除用户信息记录
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+  - `person_id`: 用户唯一ID（路径参数）
+- **响应**:
+
+```json
+{
+    "status": "success",
+    "message": "用户信息删除成功"
+}
+```
+
+#### 更新用户交互信息
+
+- **路径**: `/api/v1/resource/{instance_id}/person/{person_id}/interaction`
+- **方法**: `POST`
+- **描述**: 更新用户交互信息（印象、短期印象、分数）并更新最近认识时间
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+  - `person_id`: 用户唯一ID（路径参数）
+- **请求体**:
+
+```json
+{
+    "impression_update": "今天表现很好",
+    "short_impression_update": "很活跃",
+    "points_update": "120"
+}
+```
+
+- **响应**:
+
+```json
+{
+    "status": "success",
+    "message": "用户交互信息更新成功"
+}
+```
+
+### 🛠️ 资源管理
+
+#### 获取实例资源信息
+
+- **路径**: `/api/v1/resource/{instance_id}/info`
+- **方法**: `GET`
+- **描述**: 获取指定实例的数据库资源信息
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+- **响应**:
+
+```json
+{
+    "status": "success",
+    "message": "获取成功",
+    "data": {
+        "instance_id": "abc123",
+        "instance_name": "MaiBot-1",
+        "instance_path": "/path/to/maibot",
+        "database": {
+            "path": "/path/to/maibot/data/MaiBot.db",
+            "exists": true,
+            "valid": true,
+            "size": 1024000
+        },
+        "data_folder": {
+            "path": "/path/to/maibot/data",
+            "exists": true
+        }
+    }
+}
+```
+
+#### 获取所有实例资源信息
+
+- **路径**: `/api/v1/resource/all`
+- **方法**: `GET`
+- **描述**: 获取所有实例的数据库资源信息
+- **响应**:
+
+```json
+{
+    "status": "success",
+    "message": "获取成功",
+    "data": [
+        {
+            "instance_id": "abc123",
+            "instance_name": "MaiBot-1",
+            "database": {
+                "exists": true,
+                "valid": true,
+                "size": 1024000
+            }
+        }
+    ],
+    "total_count": 1
+}
+```
+
+### 📊 统计和批量获取 API
+
+#### 获取表情包总数
+
+- **路径**: `/api/v1/resource/{instance_id}/emoji/count`
+- **方法**: `POST`
+- **描述**: 获取表情包记录总数，支持条件筛选
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+- **请求体**:
+
+```json
+{
+    "emotion": "happy",
+    "is_registered": 1,
+    "is_banned": 0,
+    "format": "png",
+    "description_like": "开心"
+}
+```
+
+- **响应**:
+
+```json
+{
+    "status": "success",
+    "message": "成功获取表情包总数: 25",
+    "data": {
+        "total_count": 25
+    }
+}
+```
+
+#### 批量获取表情包
+
+- **路径**: `/api/v1/resource/{instance_id}/emoji/batch`
+- **方法**: `POST`
+- **描述**: 批量获取表情包数据，支持分页和条件筛选
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+- **请求体**:
+
+```json
+{
+    "batch_size": 20,
+    "offset": 0,
+    "emotion": "happy",
+    "is_registered": 1,
+    "is_banned": 0,
+    "format": "png",
+    "description_like": "开心"
+}
+```
+
+- **响应**:
+
+```json
+{
+    "status": "success",
+    "message": "成功获取 20 条表情包记录",
+    "data": [
+        {
+            "id": 123,
+            "full_path": "/path/to/emoji.png",
+            "format": "png",
+            "emoji_hash": "abc123def456",
+            "description": "开心的表情",
+            "emotion": "happy",
+            "usage_count": 10,
+            "query_count": 5,
+            "is_registered": 1,
+            "is_banned": 0,
+            "record_time": 1672531200.0,
+            "register_time": 1672531300.0,
+            "last_used_time": 1672531400.0
+        }
+    ],
+    "limit": 20,
+    "offset": 0
+}
+```
+
+#### 获取用户信息总数
+
+- **路径**: `/api/v1/resource/{instance_id}/person/count`
+- **方法**: `POST`
+- **描述**: 获取用户信息记录总数，支持条件筛选
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+- **请求体**:
+
+```json
+{
+    "platform": "qq",
+    "person_name_like": "小明",
+    "nickname_like": "同学",
+    "impression_like": "友善",
+    "has_person_name": true
+}
+```
+
+- **响应**:
+
+```json
+{
+    "status": "success",
+    "message": "成功获取用户信息总数: 15",
+    "data": {
+        "total_count": 15
+    }
+}
+```
+
+#### 批量获取用户信息
+
+- **路径**: `/api/v1/resource/{instance_id}/person/batch`
+- **方法**: `POST`
+- **描述**: 批量获取用户信息数据，支持分页和条件筛选
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+- **请求体**:
+
+```json
+{
+    "batch_size": 30,
+    "offset": 0,
+    "platform": "qq",
+    "person_name_like": "小明",
+    "nickname_like": "同学",
+    "impression_like": "友善",
+    "has_person_name": true
+}
+```
+
+- **响应**:
+
+```json
+{
+    "status": "success",
+    "message": "成功获取 15 条用户信息记录",
+    "data": [
+        {
+            "id": 456,
+            "person_id": "user_123456",
+            "person_name": "小明",
+            "name_reason": "活泼可爱",
+            "platform": "qq",
+            "user_id": "123456789",
+            "nickname": "小明同学",
+            "impression": "友善的用户",
+            "short_impression": "今天很开心",
+            "points": "100",
+            "forgotten_points": "0",
+            "info_list": "",
+            "know_times": 1672531200.0,
+            "know_since": 1672531200.0,
+            "last_know": 1672531400.0
+        }
+    ],
+    "limit": 30,
+    "offset": 0
+}
+```
+
+## WebSocket 接口
+
+MaiLauncher 提供 WebSocket 接口用于实时终端交互，支持虚拟终端 (PTY) 连接、命令执行和日志管理。
+
+### 连接
+
+- **路径**: `/ws/{session_id}`
+- **协议**: `WebSocket`
+- **描述**: 建立 WebSocket 连接用于终端交互
+- **参数**:
+  - `session_id`: 会话ID，格式为 `{instance_id}_{type}`
+    - `instance_id`: 实例ID
+    - `type`: 终端类型，可选值：`main`, `napcat`, `nonebot`
+
+### 消息格式
+
+#### 客户端发送消息
+
+**输入命令**:
+```json
+{
+    "type": "input",
+    "data": "ls -la\n"
+}
+```
+
+**Ping 保持连接**:
+```json
+{
+    "type": "ping"
+}
+```
+
+**请求历史日志**:
+```json
+{
+    "type": "request_history",
+    "from_time": 1672531200000,
+    "to_time": 1672534800000
+}
+```
+
+**调整终端大小**:
+```json
+{
+    "type": "resize",
+    "cols": 120,
+    "rows": 40
+}
+```
+
+#### 服务端返回消息
+
+**终端输出**:
+```json
+{
+    "type": "output",
+    "data": "total 8\ndrwxr-xr-x 3 user user 4096 Jan  1 12:00 .\n"
+}
+```
+
+**状态信息**:
+```json
+{
+    "type": "status",
+    "message": "已连接到 main 终端"
+}
+```
+
+**历史日志**:
+```json
+{
+    "type": "history_logs",
+    "logs": [
+        {
+            "timestamp": 1672531200000,
+            "data": "Command executed successfully\n"
+        }
+    ],
+    "session_id": "abc123_main"
+}
+```
+
+**错误信息**:
+```json
+{
+    "type": "error",
+    "message": "未找到实例 'invalid_id'"
+}
+```
+
+**Pong 响应**:
+```json
+{
+    "type": "pong"
+}
+```
+
+### 使用示例
+
+```javascript
+// 连接到实例 abc123 的主终端
+const ws = new WebSocket('ws://localhost:8080/ws/abc123_main');
+
+ws.onopen = function() {
+    console.log('WebSocket 连接已建立');
+    
+    // 发送命令
+    ws.send(JSON.stringify({
+        type: 'input',
+        data: 'echo "Hello World"\n'
+    }));
+};
+
+ws.onmessage = function(event) {
+    const message = JSON.parse(event.data);
+    
+    if (message.type === 'output') {
+        console.log('终端输出:', message.data);
+    } else if (message.type === 'status') {
+        console.log('状态:', message.message);
+    }
+};
+
+ws.onerror = function(error) {
+    console.error('WebSocket 错误:', error);
+};
+
+ws.onclose = function() {
+    console.log('WebSocket 连接已关闭');
+};
+```
 
