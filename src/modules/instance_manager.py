@@ -29,7 +29,9 @@ class Instance:
         version: str,
         path: str,
         status: InstanceStatus,
+        host: str,
         port: int,
+        token: str,
         id: Optional[int] = None,
         created_at: Optional[datetime.datetime] = None,
     ):
@@ -57,24 +59,6 @@ class Instance:
         self.port: int = port
         self.created_at: datetime.datetime = created_at or datetime.datetime.now()
 
-    def to_dict(self) -> Dict[str, Any]:
-        """
-        将 Instance 对象转换为字典。
-
-        返回:
-            Dict[str, Any]: 包含实例属性的字典。
-        """
-        return {
-            "id": self.id,
-            "instance_id": self.instance_id,
-            "name": self.name,
-            "version": self.version,
-            "path": self.path,
-            "status": self.status.value,  # 存储枚举值 (字符串)
-            "port": self.port,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-        }
-
     @classmethod
     def from_db_model(cls, db_instance: DB_Instance) -> "Instance":
         """
@@ -93,7 +77,9 @@ class Instance:
             version=db_instance.version,
             path=db_instance.path,
             status=InstanceStatus(db_instance.status),  # 将数据库中的字符串转换为枚举
+            host=db_instance.host,
             port=db_instance.port,
+            token=db_instance.token,
             created_at=db_instance.created_at,
         )
 
