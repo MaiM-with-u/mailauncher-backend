@@ -5,8 +5,7 @@ from sqlmodel import create_engine, SQLModel, Session, select
 from typing import Optional
 
 # PtyLog 模型现在从 database_model.py 导入
-# 确保 Services 也被导入
-from src.utils.database_model import Services
+from src.utils.database_model import DB_Service
 from src.utils.logger import get_module_logger  # 添加 logger 导入
 
 install(extra_lines=3)  # rich traceback 安装，用于美化异常输出
@@ -62,13 +61,13 @@ class Database:
 
     async def get_service_details(
         self, instance_id: str, service_name: str
-    ) -> Optional[Services]:
+    ) -> Optional[DB_Service]:
         """
         从数据库检索特定实例和服务的详细信息。
         """
         with Session(self.engine) as session:
-            statement = select(Services).where(
-                Services.instance_id == instance_id, Services.name == service_name
+            statement = select(DB_Service).where(
+                DB_Service.instance_id == instance_id, DB_Service.name == service_name
             )
             return session.exec(statement).first()
 

@@ -155,7 +155,7 @@ def shutdown_from_tray():
 
 
 # --- 服务器启动 ---
-async def main():
+async def main():  # sourcery skip: use-contextlib-suppress
     global tray_icon, _shutdown_initiated
 
     logger.info("正在启动MaiLauncher后端服务器...")

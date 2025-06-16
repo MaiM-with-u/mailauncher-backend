@@ -9,8 +9,8 @@ import time
 import os
 
 from src.utils.database import Database, get_db_instance
-from src.modules.instance_manager import instance_manager, InstanceStatus
-from src.utils.database_model import Instances
+from src.modules.instance_manager import instance_manager
+from .instance_manager import Instance
 from src.modules.deploy_api import generate_venv_command
 
 logger = logging.getLogger(__name__)
@@ -25,15 +25,9 @@ active_ptys_lock = asyncio.Lock()
 LOG_DIR = "logs"
 
 
-def ensure_log_directory():
-    """确保日志目录存在"""
-    if not os.path.exists(LOG_DIR):
-        os.makedirs(LOG_DIR)
-
-
 def get_log_file_path(session_id: str) -> str:
     """获取会话的日志文件路径"""
-    ensure_log_directory()
+    os.makedirs(LOG_DIR, exist_ok=True)
     return os.path.join(LOG_DIR, f"{session_id}.txt")
 
 
@@ -64,47 +58,45 @@ async def send_history_logs(
     to_time: Optional[float] = None,
 ):
     """发送历史日志到WebSocket客户端"""
+    if to_time is None:
+        to_time = float("inf")
+
+    if websocket.client_state != WebSocketState.CONNECTED:
+        return
+
+    log_file_path = get_log_file_path(session_id)
+    if not os.path.exists(log_file_path):
+        logger.info(f"会话 {session_id} 的日志文件不存在，跳过历史日志发送")
+        return
+
+    def read_and_filter_logs():
+        filtered_logs = []
+        try:
+            with open(log_file_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or ":" not in line:
+                        continue
+
+                    # 解析时间戳和数据
+                    timestamp_str, data = line.split(":", 1)
+                    try:
+                        # 按照时间过滤
+                        timestamp = float(timestamp_str)
+                        if timestamp >= from_time and timestamp <= to_time:
+                            filtered_logs.append({"timestamp": timestamp, "data": data})
+
+                    except ValueError:
+                        logger.debug(f"时间戳转换出错: {timestamp_str}")
+                        continue
+
+        except Exception as e:
+            logger.error(f"读取日志文件时出错 (会话 {session_id}): {e}")
+
+        return filtered_logs
+
     try:
-        if websocket.client_state != WebSocketState.CONNECTED:
-            return
-
-        log_file_path = get_log_file_path(session_id)
-
-        if not os.path.exists(log_file_path):
-            logger.info(f"会话 {session_id} 的日志文件不存在，跳过历史日志发送")
-            return
-
         # 异步读取和过滤日志
-        def read_and_filter_logs():
-            filtered_logs = []
-            try:
-                with open(log_file_path, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-
-                        # 解析时间戳和数据
-                        if ":" in line:
-                            timestamp_str, data = line.split(":", 1)
-                            try:
-                                timestamp = float(timestamp_str)
-
-                                # 时间过滤
-                                if timestamp >= from_time:
-                                    if to_time is None or timestamp <= to_time:
-                                        filtered_logs.append(
-                                            {"timestamp": timestamp, "data": data}
-                                        )
-
-                            except ValueError:
-                                continue
-
-            except Exception as e:
-                logger.error(f"读取日志文件时出错 (会话 {session_id}): {e}")
-
-            return filtered_logs
-
         logs = await asyncio.to_thread(read_and_filter_logs)
 
         if logs:
@@ -134,16 +126,12 @@ async def get_pty_command_and_cwd_from_instance(
 
     instance_short_id, _, type_part = parts
 
-    instance: Optional[Instances] = instance_manager.get_instance(instance_short_id)
+    instance: Optional[Instance] = instance_manager.get_instance(instance_short_id)
     if not instance:
         logger.warning(f"在 instance_manager 中未找到实例 '{instance_short_id}'。")
         return None, None, None
 
-    status_value = (
-        instance.status.value
-        if isinstance(instance.status, InstanceStatus)
-        else instance.status
-    )
+    status_value = instance.status.value
     pty_command: Optional[str] = None
     pty_cwd: Optional[str] = None
 
@@ -169,7 +157,7 @@ async def get_pty_command_and_cwd_from_instance(
 
         # 提取服务名称列表
         installed_service_names = [
-            service.get("name") for service in installed_services if service.get("name")
+            service.name for service in installed_services if service.name
         ]
 
         # 2. 检查请求的服务是否在已安装列表中
@@ -189,7 +177,9 @@ async def get_pty_command_and_cwd_from_instance(
             and service_details.run_cmd
         ):
             pty_cwd = service_details.path
-            base_command = service_details.run_cmd  # 使用 Services 表中的 run_cmd 字段
+            base_command = (
+                service_details.run_cmd
+            )  # 使用 DB_Service 表中的 run_cmd 字段
             # 使用虚拟环境激活的命令
             pty_command = generate_venv_command(base_command, pty_cwd)
 
@@ -207,7 +197,7 @@ async def get_pty_command_and_cwd_from_instance(
                 logger.warning(
                     f"服务 '{type_part}' (实例: '{instance_short_id}') 的路径 (path) 缺失。PTY 将不会启动。"
                 )
-            elif not hasattr(service_details, "run_cmd") or not service_details.run_cmd:
+            elif not service_details.run_cmd:
                 logger.warning(
                     f"服务 '{type_part}' (实例: '{instance_short_id}') 的启动命令 (run_cmd) 缺失或为空。PTY 将不会启动。"
                 )
@@ -301,7 +291,7 @@ async def handle_websocket_connection(
 ):
     """
     处理单个 WebSocket 连接 (FastAPI version)。
-    session_id 是从路径中提取的部分，例如 "yourinstanceid_main"。
+    session_id 是从路径中提取的部分，例如 "InstanceId_main"。
     现在支持历史日志恢复。
     """
     await websocket.accept()
@@ -624,10 +614,11 @@ async def stop_all_ptys_for_instance(instance_short_id: str) -> dict:
     sessions_to_process = []
     # Lock before accessing active_ptys
     async with active_ptys_lock:
-        for session_id, pty_info_dict in active_ptys.items():
-            if pty_info_dict.get("instance_part") == instance_short_id:
-                sessions_to_process.append(session_id)
-
+        sessions_to_process.extend(
+            session_id
+            for session_id, pty_info_dict in active_ptys.items()
+            if pty_info_dict.get("instance_part") == instance_short_id
+        )
     if not sessions_to_process:
         msg = f"未找到实例 '{instance_short_id}' 的活动 PTY 会话。"
         logger.info(msg)
@@ -729,19 +720,17 @@ async def stop_all_ptys_for_instance(instance_short_id: str) -> dict:
                     f"关闭 WebSocket for session '{session_label}' 时发生错误: {e_ws_close}"
                 )
 
-        if pty_terminated_successfully:
+        if pty_terminated_successfully and all(
+            f_item["id"] == session_id for f_item in failed_to_terminate_sessions_info
+        ):
             # Add to terminated list only if not already marked as failed
-            if not any(
-                f_item["id"] == session_id
-                for f_item in failed_to_terminate_sessions_info
-            ):
-                terminated_sessions_info.append(
-                    {
-                        "id": session_id,
-                        "type": current_type_part,
-                        "status": "terminated",
-                    }
-                )
+            terminated_sessions_info.append(
+                {
+                    "id": session_id,
+                    "type": current_type_part,
+                    "status": "terminated",
+                }
+            )
         # If not pty_terminated_successfully and not in failed_to_terminate_sessions_info, it implies an issue not caught by PTY termination try-except
         # This case might need more specific logging or error handling if it occurs.
         # For now, it means it wasn't explicitly successful, nor did it log a PTY termination error.

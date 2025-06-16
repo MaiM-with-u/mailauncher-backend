@@ -1,4 +1,4 @@
-from src.utils.database_model import Instances, Services  # SQLModel version
+from src.utils.database_model import DB_Instance, DB_Service  # SQLModel version
 from src.utils.database import engine  # SQLModel engine
 from sqlmodel import Session, select  # SQLModel session and select
 
@@ -76,12 +76,12 @@ class Instance:
         }
 
     @classmethod
-    def from_db_model(cls, db_instance: Instances) -> "Instance":
+    def from_db_model(cls, db_instance: DB_Instance) -> "Instance":
         """
         从数据库模型对象创建 Instance 对象。
 
         参数:
-            db_instance (Instances): SQLModel 数据库模型实例。
+            db_instance (DB_Instance): SQLModel 数据库模型实例。
 
         返回:
             Instance: 根据数据库模型创建的 Instance 对象。
@@ -107,7 +107,7 @@ class InstanceManager:
 
     def _execute_query(
         self, query, operation_name: str, instance_id: Optional[str] = None
-    ):
+    ):  # sourcery skip: extract-method
         """执行数据库查询并处理常见的异常。"""
         try:
             with Session(engine) as session:
@@ -163,7 +163,7 @@ class InstanceManager:
         引发:
             Exception: 如果使用提供的 db_session 时在数据库操作期间发生错误。
         """
-        db_model_instance = Instances(
+        db_model_instance = DB_Instance(
             instance_id=instance_id,
             name=name,
             version=version,
@@ -207,14 +207,11 @@ class InstanceManager:
         """
         try:
             with Session(engine) as session:
-                statement = select(Instances).where(
-                    Instances.instance_id == instance_id
+                statement = select(DB_Instance).where(
+                    DB_Instance.instance_id == instance_id
                 )
                 db_instance = session.exec(statement).first()
-                if db_instance:
-                    # 在 session 活跃时创建 Instance 对象，避免 DetachedInstanceError
-                    return Instance.from_db_model(db_instance)
-                return None
+                return Instance.from_db_model(db_instance) if db_instance else None
         except Exception as e:
             logger.error(f"获取实例时出错 (实例ID: {instance_id}): {e}")
             return None
@@ -228,16 +225,14 @@ class InstanceManager:
         """
         try:
             with Session(engine) as session:
-                statement = select(Instances)
+                statement = select(DB_Instance)
                 results = session.exec(statement).all()
                 return [Instance.from_db_model(db_instance) for db_instance in results]
         except Exception as e:
             logger.error(f"获取所有实例时出错: {e}")
             return []
 
-    def get_instance_services(
-        self, instance_id: str
-    ) -> List[Dict[str, Any]]:  # Changed return type
+    def get_instance_services(self, instance_id: str) -> List[DB_Service]:
         """
         根据实例ID从数据库中检索该实例安装的所有服务的详细信息列表。
 
@@ -249,12 +244,12 @@ class InstanceManager:
                                     每个字典包含: "id", "instance_id", "name", "path", "run_cmd", "status", "port"。
                                     如果找不到实例或发生错误，则返回空列表。
         """
-        services_details: List[Dict[str, Any]] = []  # Changed variable name and type
+        db_services: List[DB_Service] = []
         try:
             with Session(engine) as session:
                 # 首先检查实例是否存在
-                instance_exists_statement = select(Instances).where(
-                    Instances.instance_id == instance_id
+                instance_exists_statement = select(DB_Instance).where(
+                    DB_Instance.instance_id == instance_id
                 )
                 instance_db = session.exec(instance_exists_statement).first()
                 if not instance_db:
@@ -264,36 +259,22 @@ class InstanceManager:
                     return []
 
                 # 获取与 instance_id 关联的所有服务
-                statement = select(Services).where(  # Changed to select(Services)
-                    Services.instance_id == instance_id
+                statement = select(DB_Service).where(
+                    DB_Service.instance_id == instance_id
                 )
-                db_services = session.exec(statement).all()  # Returns List[Services]
+                db_services = session.exec(statement).all()  # Returns List[DB_Service]
 
-                services_details = [
-                    {
-                        "id": service.id,
-                        "instance_id": service.instance_id,
-                        "name": service.name,
-                        "path": service.path,
-                        "run_cmd": service.run_cmd,
-                        "status": service.status,
-                        "port": service.port,
-                    }
-                    for service in db_services
-                ]
                 logger.info(
-                    f"成功检索到实例 {instance_id} 的服务详细列表: {services_details}"
-                )  # Updated log message
+                    f"成功检索到实例 {instance_id} 的服务详细列表: {db_services}"
+                )
         except Exception as e:
-            logger.error(
-                f"获取实例 {instance_id} 的服务详细列表时出错: {e}"
-            )  # Updated log message
+            logger.error(f"获取实例 {instance_id} 的服务详细列表时出错: {e}")
             return []  # Return empty list on error
-        return services_details
+        return db_services
 
     def update_instance_status(
         self, instance_id: str, new_status: InstanceStatus
-    ) -> Optional[Instance]:
+    ) -> Optional[Instance]:  # sourcery skip: extract-method
         """
         更新数据库中现有实例的状态。
 
@@ -308,7 +289,9 @@ class InstanceManager:
             with Session(engine) as session:
                 if not (
                     db_instance := session.exec(
-                        select(Instances).where(Instances.instance_id == instance_id)
+                        select(DB_Instance).where(
+                            DB_Instance.instance_id == instance_id
+                        )
                     ).first()
                 ):
                     logger.warning(f"尝试更新状态失败：未找到实例 {instance_id}。")
@@ -326,7 +309,7 @@ class InstanceManager:
 
     def update_instance_port(
         self, instance_id: str, new_port: int
-    ) -> Optional[Instance]:
+    ) -> Optional[Instance]:  # sourcery skip: extract-method
         """
         更新数据库中现有实例的端口号。
 
@@ -341,7 +324,9 @@ class InstanceManager:
             with Session(engine) as session:
                 if not (
                     db_instance := session.exec(
-                        select(Instances).where(Instances.instance_id == instance_id)
+                        select(DB_Instance).where(
+                            DB_Instance.instance_id == instance_id
+                        )
                     ).first()
                 ):
                     logger.warning(f"尝试更新端口失败：未找到实例 {instance_id}。")
@@ -371,7 +356,9 @@ class InstanceManager:
             with Session(engine) as session:
                 if not (
                     db_instance := session.exec(
-                        select(Instances).where(Instances.instance_id == instance_id)
+                        select(DB_Instance).where(
+                            DB_Instance.instance_id == instance_id
+                        )
                     ).first()
                 ):
                     logger.warning(f"尝试删除失败：未找到实例 {instance_id}。")

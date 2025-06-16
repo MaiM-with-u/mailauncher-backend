@@ -9,10 +9,7 @@ from src.modules.instance_manager import (
     InstanceStatus,
 )  # instance_manager 已适配SQLModel
 from src.utils.logger import get_module_logger
-from src.utils.database_model import (
-    Services,
-    Instances,
-)  # SQLModel 版本 - 添加 Instances
+from src.utils.database_model import DB_Service, DB_Instance
 from src.utils.database import engine  # SQLModel 引擎
 from sqlmodel import Session, select  # SQLModel Session - 添加 select
 from winpty import PtyProcess  # type: ignore
@@ -146,9 +143,7 @@ async def _start_pty_process(
         # 尝试提取虚拟环境 Python 路径进行验证
         import re
 
-        python_exe_pattern = r'"([^"]*python\.exe)"'
-        match = re.search(python_exe_pattern, pty_command_str)
-        if match:
+        if match := re.search(r'"([^"]*python\.exe)"', pty_command_str):
             python_exe_path = match.group(1)
             logger.info(f"检测到虚拟环境 Python 路径: {python_exe_path}")
 
@@ -302,8 +297,8 @@ async def _start_pty_process(
                     logger.error(f"cmd.exe 备用策略也失败: {cmd_error}")
                     raise spawn_error  # 抛出原始错误
             else:
-                raise spawn_error  # 非 Windows 系统直接抛出错误        if not pty_process:
-            raise Exception("无法创建 PTY 进程")
+                raise spawn_error  # 非 Windows 系统直接抛出错误
+            raise RuntimeError("无法创建 PTY 进程")
 
         # 使用单独的锁操作来添加新的PTY
         async with active_ptys_lock:
@@ -374,14 +369,14 @@ async def get_instances():
     try:
         with Session(engine) as session:
             # 查询所有实例
-            db_instances = session.exec(select(Instances)).all()
+            db_instances = session.exec(select(DB_Instance)).all()
             response_instances: List[InstanceDetail] = []
 
             for db_instance in db_instances:
                 # 查询每个实例关联的服务
                 db_services = session.exec(
-                    select(Services).where(
-                        Services.instance_id == db_instance.instance_id
+                    select(DB_Service).where(
+                        DB_Service.instance_id == db_instance.instance_id
                     )
                 ).all()
 
@@ -432,7 +427,7 @@ async def get_instance_stats():
     logger.info("收到获取实例统计信息请求")
     try:
         with Session(engine) as session:
-            db_instances = session.exec(select(Instances)).all()
+            db_instances = session.exec(select(DB_Instance)).all()
 
             total_instances = len(db_instances)
             running_instances = 0
@@ -461,6 +456,7 @@ async def get_instance_stats():
 
 @router.get("/instance/{instance_id}/start", response_model=ActionResponse)
 async def start_instance(instance_id: str):
+    # sourcery skip: use-named-expression
     logger.info(f"收到启动实例 {instance_id} 的请求")
     instance = instance_manager.get_instance(instance_id)
     if not instance:
@@ -487,13 +483,12 @@ async def start_instance(instance_id: str):
 
     # 3. 获取已安装的服务
     installed_services = instance_manager.get_instance_services(instance_id)
-    logger.info(
-        f"实例 {instance_id} 检测到已安装的服务: {installed_services}"
-    )  # 4. 启动已安装服务的 PTY
     if installed_services:
+        # 4. 启动已安装服务的 PTY
+        logger.info(f"实例 {instance_id} 检测到已安装的服务: {installed_services}")
         for service_detail in installed_services:
             # 从服务详情字典中提取服务名称
-            service_name = service_detail.get("name")
+            service_name = service_detail.name
             if not service_name:
                 logger.warning(f"跳过无效的服务详情（缺少name字段）: {service_detail}")
                 continue
@@ -518,10 +513,7 @@ async def start_instance(instance_id: str):
 
     # 5. 根据 PTY 启动结果更新实例状态
     if started_any_process:
-        updated_instance = instance_manager.update_instance_status(
-            instance_id, InstanceStatus.RUNNING
-        )
-        if updated_instance:
+        if instance_manager.update_instance_status(instance_id, InstanceStatus.RUNNING):
             logger.info(f"实例 {instance_id} 状态已更新为“运行中”。")
             return ActionResponse(
                 success=True, message=f"实例 {instance.name} 组件已启动。"
@@ -543,7 +535,7 @@ async def start_instance(instance_id: str):
 
 
 @router.get("/instance/{instance_id}/stop", response_model=ActionResponse)
-async def stop_instance(instance_id: str):
+async def stop_instance(instance_id: str):  # sourcery skip: use-named-expression
     logger.info(f"收到停止实例 {instance_id} 的请求")
     instance = instance_manager.get_instance(instance_id)
     if not instance:
@@ -562,7 +554,7 @@ async def stop_instance(instance_id: str):
     if installed_services:
         for service_detail in installed_services:
             # 从服务详情字典中提取服务名称
-            service_name = service_detail.get("name")
+            service_name = service_detail.name
             if service_name and service_name not in pty_types_to_stop:  # 避免重复
                 pty_types_to_stop.append(service_name)
 
@@ -617,6 +609,7 @@ async def stop_instance(instance_id: str):
 
 @router.post("/instances/add", response_model=DeployResponse)
 async def add_existing_instance(payload: DeployRequest):
+    # sourcery skip: use-named-expression
     """
     添加硬盘中已有的麦麦实例到系统中。
 
@@ -723,7 +716,7 @@ async def add_existing_instance(payload: DeployRequest):
     # 创建数据库记录
     with Session(engine) as session:  # 检查实例是否已存在
         existing_instance_check = session.exec(
-            select(Instances).where(Instances.instance_id == instance_id_str)
+            select(DB_Instance).where(DB_Instance.instance_id == instance_id_str)
         ).first()
 
         if existing_instance_check:
@@ -756,7 +749,7 @@ async def add_existing_instance(payload: DeployRequest):
                 )
             # 创建服务记录
             for service_config in payload.install_services:
-                db_service = Services(
+                db_service = DB_Service(
                     instance_id=instance_id_str,
                     name=service_config.name,
                     path=service_config.path,
@@ -830,7 +823,7 @@ async def delete_instance(instance_id: str):
         with Session(engine) as session:
             # 获取所有相关的服务记录，收集路径信息
             services_to_delete = session.exec(
-                select(Services).where(Services.instance_id == instance_id)
+                select(DB_Service).where(DB_Service.instance_id == instance_id)
             ).all()
 
             # 收集服务文件夹路径
@@ -843,7 +836,7 @@ async def delete_instance(instance_id: str):
 
             # 获取实例记录，收集实例路径
             instance_to_delete = session.exec(
-                select(Instances).where(Instances.instance_id == instance_id)
+                select(DB_Instance).where(DB_Instance.instance_id == instance_id)
             ).first()
 
             if instance_to_delete and instance_to_delete.path:
@@ -874,7 +867,7 @@ async def delete_instance(instance_id: str):
         for folder_path in folders_to_delete:
             try:
                 folder_path_obj = Path(folder_path)
-                if folder_path_obj.exists() and folder_path_obj.is_dir():
+                if folder_path_obj.is_dir():
                     shutil.rmtree(folder_path, ignore_errors=False)
                     deleted_folders.append(folder_path)
                     logger.info(f"成功删除文件夹: {folder_path}")

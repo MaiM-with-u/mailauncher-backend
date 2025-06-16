@@ -1,12 +1,12 @@
 from sqlmodel import Field, SQLModel  # 导入SQLModel
-from typing import Optional
+from typing import Optional, Literal
 import datetime
 from src.utils.logger import get_module_logger
 
 logger = get_module_logger("数据库模型")  # 日志记录器名称可以保持不变或更改
 
 
-class Instances(SQLModel, table=True):
+class DB_Instance(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)  # 数据库内部ID，主键
     instance_id: str = Field(
         unique=True, index=True
@@ -15,14 +15,16 @@ class Instances(SQLModel, table=True):
     version: str  # 实例部署的 MaiBot 版本
     path: str  # 实例在文件系统中的路径
     status: str  # 实例的当前状态 (例如, "running", "stopped", "error")
+    host: str # 实例的地址
     port: int  # 实例运行时占用的端口号
+    token: str # Maim_message所设定的token
+    maim_type: Literal["ws", "tcp"] = Field(default="ws") # Maim_message连接使用的方法
     created_at: datetime.datetime = Field(
         default_factory=datetime.datetime.now
     )  # 实例创建时间
-    # qq_number: int  # 实例的 QQ 号码 (如果适用)
 
 
-class Services(SQLModel, table=True):
+class DB_Service(SQLModel, table=True):
     id: Optional[int] = Field(
         default=None, primary_key=True
     )  # 服务记录的数据库内部ID，主键

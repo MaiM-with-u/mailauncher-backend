@@ -5,9 +5,9 @@ from maim_message import (
     TargetConfig,
 )
 from fastapi import WebSocket
-from starlette.websockets import WebSocketState, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 from asyncio import Queue
-from typing import Dict, List
+from typing import Dict
 
 import json
 import asyncio

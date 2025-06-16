@@ -8,8 +8,8 @@ from src.modules.instance_manager import (
 from src.utils.generate_instance_id import generate_instance_id
 from src.utils.logger import get_module_logger
 from src.utils.database_model import (
-    Services,
-    Instances,
+    DB_Service,
+    DB_Instance,
 )
 from src.utils.database import engine
 from sqlmodel import Session, select
@@ -225,7 +225,7 @@ async def deploy_maibot(
 
     with Session(engine) as session:
         existing_instance_check = session.exec(
-            select(Instances).where(Instances.instance_id == instance_id_str)
+            select(DB_Instance).where(DB_Instance.instance_id == instance_id_str)
         ).first()
 
         if existing_instance_check:
@@ -586,7 +586,7 @@ async def save_instance_to_database(payload: DeployRequest, instance_id_str: str
             )  # 初始化服务状态
             services_status = []
             for service_config in payload.install_services:
-                db_service = Services(
+                db_service = DB_Service(
                     instance_id=instance_id_str,
                     name=service_config.name,
                     path=service_config.path,

@@ -190,3 +190,5 @@ logs/
 
 # MaiBot test
 ~
+
+.vscode
