@@ -12,7 +12,7 @@ logger = get_module_logger("实例管理器")
 
 class InstanceStatus(Enum):
     RUNNING = "运行中"
-    STOPPED = "已停止"  
+    STOPPED = "已停止"
     STARTING = "启动中"
     STOPPING = "停止中"
     MAINTENANCE = "维护中"
