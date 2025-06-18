@@ -15,9 +15,9 @@ class DB_Instance(SQLModel, table=True):
     version: str  # 实例部署的 MaiBot 版本
     path: str  # 实例在文件系统中的路径
     status: str  # 实例的当前状态 (例如, "running", "stopped", "error")
-    host: str # 实例的地址
+    host: str  # 实例的地址
     port: int  # 实例运行时占用的端口号
-    token: str # Maim_message所设定的token
+    token: str  # Maim_message所设定的token
     maim_type: str = Field(default="ws")  # Maim_message连接使用的方法 (ws 或 tcp)
     created_at: datetime.datetime = Field(
         default_factory=datetime.datetime.now

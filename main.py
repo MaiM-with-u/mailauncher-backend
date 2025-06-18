@@ -105,10 +105,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     db_instance = get_db_instance()
     await handle_websocket_connection(websocket, session_id, db_instance)
 
+
 @APIRouterV1.websocket("/chat/{session_id}")
 async def websocket_chat_endpoint(websocket: WebSocket, session_id: str):
     """处理聊天 WebSocket 连接"""
     await message_api.handle_websocket_connection(websocket, session_id)
+
 
 global_server.register_router(APIRouterV1, prefix=API_PREFIX)
 global_server.register_router(instance_api.router, prefix=API_PREFIX)
