@@ -728,14 +728,15 @@ async def add_existing_instance(payload: DeployRequest):
                 detail=f"实例 '{payload.instance_name}' (ID: {instance_id_str}) 已存在。",
             )
 
-        try:
-            # 创建实例记录
+        try:            # 创建实例记录
             new_instance_obj = instance_manager.create_instance(
                 name=payload.instance_name,
                 version=payload.version,
                 path=main_install_path,  # 使用main_install_path而不是payload.install_path
                 status=InstanceStatus.STOPPED,  # 新添加的实例默认为停止状态
+                host=payload.host,
                 port=payload.port,
+                token=payload.token,
                 instance_id=instance_id_str,
                 db_session=session,
             )

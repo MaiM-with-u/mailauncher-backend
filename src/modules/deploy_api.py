@@ -50,8 +50,8 @@ class DeployRequest(BaseModel):
     install_path: str = Field(..., description="MaiBot 安装路径")
     port: int = Field(..., description="MaiBot 主程序端口")
     version: str = Field(..., description="要部署的 MaiBot 版本")
-    host: str = Field(..., description="实例的主机地址")
-    token: str = Field(..., description="Maim_message所设定的token")
+    host: str = Field(default="127.0.0.1", description="实例的主机地址")
+    token: str = Field(default="", description="Maim_message所设定的token")
     # qq_number: Optional[str] = Field(None, description="关联的QQ号")
 
 
@@ -570,7 +570,9 @@ async def save_instance_to_database(payload: DeployRequest, instance_id_str: str
                 version=payload.version,
                 path=payload.install_path,
                 status=InstanceStatus.STOPPED,  # 初始状态为 STOPPED
+                host=payload.host,
                 port=payload.port,
+                token=payload.token,
                 instance_id=instance_id_str,
                 db_session=session,
             )

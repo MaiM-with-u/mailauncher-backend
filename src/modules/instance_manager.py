@@ -125,7 +125,9 @@ class InstanceManager:
         version: str,
         path: str,
         status: InstanceStatus,
+        host: str,
         port: int,
+        token: str,
         instance_id: str,
         db_session: Optional[Session] = None,  # 添加可选的 db_session 参数
     ) -> Optional[Instance]:
@@ -144,9 +146,7 @@ class InstanceManager:
             db_session (Optional[Session]): 用于数据库操作的可选SQLModel会话。
 
         返回:
-            Optional[Instance]: 如果创建成功，则返回新的 Instance 对象，否则返回 None (如果内部管理会话时出错) 或引发异常 (如果使用提供的会话时出错)。
-
-        引发:
+            Optional[Instance]: 如果创建成功，则返回新的 Instance 对象，否则返回 None (如果内部管理会话时出错) 或引发异常 (如果使用提供的会话时出错)。        引发:
             Exception: 如果使用提供的 db_session 时在数据库操作期间发生错误。
         """
         db_model_instance = DB_Instance(
@@ -155,7 +155,9 @@ class InstanceManager:
             version=version,
             path=path,
             status=status.value,
+            host=host,
             port=port,
+            token=token,
         )
 
         if db_session:
