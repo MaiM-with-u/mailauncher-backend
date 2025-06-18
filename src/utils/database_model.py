@@ -1,5 +1,5 @@
 from sqlmodel import Field, SQLModel  # 导入SQLModel
-from typing import Optional, Literal
+from typing import Optional
 import datetime
 from src.utils.logger import get_module_logger
 
@@ -18,7 +18,7 @@ class DB_Instance(SQLModel, table=True):
     host: str # 实例的地址
     port: int  # 实例运行时占用的端口号
     token: str # Maim_message所设定的token
-    maim_type: Literal["ws", "tcp"] = Field(default="ws") # Maim_message连接使用的方法
+    maim_type: str = Field(default="ws")  # Maim_message连接使用的方法 (ws 或 tcp)
     created_at: datetime.datetime = Field(
         default_factory=datetime.datetime.now
     )  # 实例创建时间
