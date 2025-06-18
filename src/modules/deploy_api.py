@@ -50,6 +50,8 @@ class DeployRequest(BaseModel):
     install_path: str = Field(..., description="MaiBot 安装路径")
     port: int = Field(..., description="MaiBot 主程序端口")
     version: str = Field(..., description="要部署的 MaiBot 版本")
+    host: str = Field(..., description="实例的主机地址")
+    token: str = Field(..., description="Maim_message所设定的token")
     # qq_number: Optional[str] = Field(None, description="关联的QQ号")
 
 
