@@ -68,12 +68,16 @@ class MessagesAPI:
             await asyncio.sleep(self.polling_interval)
 
     async def forward_message(self, session_id: str, raw_message: MessageBase):
-        self.websocket_session_dict[session_id].send_json(json.dumps(raw_message.to_dict()))
+        self.websocket_session_dict[session_id].send_json(
+            json.dumps(raw_message.to_dict())
+        )
         logger.debug(
             f"转发消息到 WebSocket (会话 ID: {session_id}): {raw_message.to_dict()}"
         )
 
-    async def handle_websocket_connection(self, websocket: WebSocket, session_id: str) -> None:
+    async def handle_websocket_connection(
+        self, websocket: WebSocket, session_id: str
+    ) -> None:
         self.websocket_session_dict[session_id] = websocket
         await websocket.accept()
         logger.info(
@@ -90,7 +94,7 @@ class MessagesAPI:
             return
 
         instance_short_id, _, _ = parts
-        
+
         # 验证实例是否存在
         instance = instance_manager.get_instance(instance_short_id)
         if not instance:
@@ -100,10 +104,10 @@ class MessagesAPI:
                 await websocket.send_json({"type": "error", "message": err_msg})
                 await websocket.close(code=1003)
             return
-        
+
         instance_host = instance.host
         instance_port = instance.port
-        instance_token = instance.token if hasattr(instance, 'token') else None # 备用
+        instance_token = instance.token if hasattr(instance, "token") else None  # 备用
         if not instance_host or not instance_port:
             err_msg = f"实例 '{instance_short_id}' 的 HOST 或 PORT 未设置"
             logger.error(err_msg)
@@ -111,7 +115,7 @@ class MessagesAPI:
                 await websocket.send_json({"type": "error", "message": err_msg})
                 await websocket.close(code=1003)
             return
-        
+
         if session_id not in self.routers:
             try:
                 logger.debug(
@@ -120,7 +124,7 @@ class MessagesAPI:
                 self.add_instance(
                     url=f"ws://{instance_host}:{instance_port}/ws",
                     token=instance_token,
-                    session_id=session_id
+                    session_id=session_id,
                 )
             except Exception as e:
                 err_msg = f"注册路由失败: {e}"
@@ -131,6 +135,6 @@ class MessagesAPI:
                 return
         if session_id not in message_pool:
             message_pool[session_id] = Queue()
-        
+
 
 message_api = MessagesAPI()
