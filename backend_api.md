@@ -10,6 +10,10 @@
   - [👤 用户信息管理](#👤-用户信息管理)
   - [🛠️ 资源管理](#🛠️-资源管理)
   - [📊 统计和批量获取 API](#📊-统计和批量获取-api)
+- [⚙️ 配置管理 API](#⚙️-配置管理-api)
+  - [🤖 Bot 配置管理](#🤖-bot-配置管理)
+  - [🔧 LPMM 配置管理](#🔧-lpmm-配置管理)
+  - [🌐 环境变量管理](#🌐-环境变量管理)
 - [WebSocket 接口](#WebSocket接口)
 
 ## 实例管理
@@ -1041,13 +1045,304 @@ MaiBot 资源管理 API 提供对 MaiBot 实例数据库的 CRUD 操作，包括
             "info_list": "",
             "know_times": 1672531200.0,
             "know_since": 1672531200.0,
-            "last_know": 1672531400.0
-        }
+            "last_know": 1672531400.0        }
     ],
     "limit": 30,
     "offset": 0
 }
 ```
+
+## ⚙️ 配置管理 API
+
+配置管理 API 提供对 MaiBot 实例配置文件的管理功能，包括 Bot 配置、LPMM 配置和环境变量的读取与更新。
+
+### 🤖 Bot 配置管理
+
+Bot 配置管理用于处理位于 `{instance_path}/config/bot_config.toml` 的 TOML 格式配置文件。
+
+#### 获取 Bot 配置
+
+- **路径**: `/api/v1/resources/{instance_id}/config/get`
+- **方法**: `GET`
+- **描述**: 获取指定实例的 Bot 配置文件内容
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+
+**响应示例**:
+```json
+{
+    "status": "success",
+    "message": "获取bot配置成功",
+    "data": {
+        "bot": {
+            "name": "MaiBot",
+            "version": "1.0.0",
+            "debug": true,
+            "log_level": "INFO"
+        },
+        "database": {
+            "host": "localhost",
+            "port": 5432,
+            "name": "maibot_db",
+            "user": "maibot_user"
+        },
+        "features": {
+            "auto_reply": true,
+            "emoji_management": true,
+            "user_tracking": true
+        }
+    }
+}
+```
+
+**错误响应**:
+```json
+{
+    "status": "failed",
+    "message": "实例 {instance_id} 不存在"
+}
+```
+
+#### 更新 Bot 配置
+
+- **路径**: `/api/v1/resources/{instance_id}/config/update`
+- **方法**: `POST`
+- **描述**: 更新指定实例的 Bot 配置文件
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+
+**请求体**:
+```json
+{
+    "instance_id": "abc123def456",
+    "config_data": {
+        "bot": {
+            "name": "MaiBot",
+            "version": "1.0.1",
+            "debug": false,
+            "log_level": "WARNING"
+        },
+        "database": {
+            "host": "192.168.1.100",
+            "port": 5432,
+            "name": "maibot_db",
+            "user": "maibot_user"
+        },
+        "features": {
+            "auto_reply": true,
+            "emoji_management": true,
+            "user_tracking": false
+        }
+    }
+}
+```
+
+**响应示例**:
+```json
+{
+    "status": "success",
+    "message": "更新bot配置成功"
+}
+```
+
+### 🔧 LPMM 配置管理
+
+LPMM 配置管理用于处理位于 `{instance_path}/config/lpmm_config.toml` 的 TOML 格式配置文件。
+
+#### 获取 LPMM 配置
+
+- **路径**: `/api/v1/resources/{instance_id}/lpmm/get`
+- **方法**: `GET`
+- **描述**: 获取指定实例的 LPMM 配置文件内容
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+
+**响应示例**:
+```json
+{
+    "status": "success",
+    "message": "获取LPMM配置成功",
+    "data": {
+        "lpmm": {
+            "enabled": true,
+            "check_interval": 60,
+            "auto_update": false
+        },
+        "packages": {
+            "auto_install": true,
+            "update_channel": "stable",
+            "allowed_sources": ["official", "community"]
+        },
+        "security": {
+            "verify_signatures": true,
+            "allow_dev_packages": false
+        }
+    }
+}
+```
+
+#### 更新 LPMM 配置
+
+- **路径**: `/api/v1/resources/{instance_id}/lpmm/update`
+- **方法**: `POST`
+- **描述**: 更新指定实例的 LPMM 配置文件
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+
+**请求体**:
+```json
+{
+    "instance_id": "abc123def456",
+    "config_data": {
+        "lpmm": {
+            "enabled": true,
+            "check_interval": 30,
+            "auto_update": true
+        },
+        "packages": {
+            "auto_install": false,
+            "update_channel": "beta",
+            "allowed_sources": ["official"]
+        },
+        "security": {
+            "verify_signatures": true,
+            "allow_dev_packages": true
+        }
+    }
+}
+```
+
+**响应示例**:
+```json
+{
+    "status": "success",
+    "message": "更新LPMM配置成功"
+}
+```
+
+### 🌐 环境变量管理
+
+环境变量管理用于处理位于 `{instance_path}/.env` 的环境变量文件。
+
+#### 获取环境变量配置
+
+- **路径**: `/api/v1/resources/{instance_id}/env/get`
+- **方法**: `GET`
+- **描述**: 获取指定实例的环境变量配置
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+
+**响应示例**:
+```json
+{
+    "status": "success",
+    "message": "获取环境变量配置成功",
+    "data": {
+        "API_KEY": "your_api_key_here",
+        "DEBUG": "true",
+        "PORT": "8080",
+        "DATABASE_URL": "postgresql://user:pass@localhost:5432/db",
+        "LOG_LEVEL": "INFO",
+        "MESSAGE": "Hello World with spaces"
+    }
+}
+```
+
+#### 更新环境变量配置
+
+- **路径**: `/api/v1/resources/{instance_id}/env/update`
+- **方法**: `POST`
+- **描述**: 更新指定实例的环境变量配置
+- **参数**:
+  - `instance_id`: 实例ID（路径参数）
+
+**请求体**:
+```json
+{
+    "instance_id": "abc123def456",
+    "env_data": {
+        "API_KEY": "new_api_key_123",
+        "DEBUG": "false",
+        "PORT": "9000",
+        "DATABASE_URL": "postgresql://newuser:newpass@192.168.1.100:5432/newdb",
+        "LOG_LEVEL": "WARNING",
+        "NEW_VARIABLE": "some_value"
+    }
+}
+```
+
+**响应示例**:
+```json
+{
+    "status": "success",
+    "message": "更新环境变量配置成功"
+}
+```
+
+### 配置管理通用错误响应
+
+所有配置管理 API 可能返回以下错误响应：
+
+**实例不存在**:
+```json
+{
+    "status": "failed",
+    "message": "实例 {instance_id} 不存在"
+}
+```
+
+**配置文件不存在**:
+```json
+{
+    "status": "failed",
+    "message": "Bot配置文件不存在: {file_path}"
+}
+```
+
+**文件格式错误**:
+```json
+{
+    "status": "failed",
+    "message": "TOML文件格式错误: {error_details}"
+}
+```
+
+**文件操作失败**:
+```json
+{
+    "status": "failed",
+    "message": "写入TOML文件失败: {error_details}"
+}
+```
+
+**服务器内部错误**:
+```json
+{
+    "status": "failed",
+    "message": "获取配置失败: {error_details}"
+}
+```
+
+### 配置管理使用说明
+
+1. **文件路径规范**:
+   - Bot 配置文件: `{instance_path}/config/bot_config.toml`
+   - LPMM 配置文件: `{instance_path}/config/lpmm_config.toml`
+   - 环境变量文件: `{instance_path}/.env`
+
+2. **权限要求**:
+   - 需要对实例目录有读写权限
+   - 配置文件不存在时会自动创建目录和文件
+
+3. **数据格式**:
+   - TOML 文件使用 `tomlkit` 库解析，支持标准 TOML 格式
+   - 环境变量使用 `python-dotenv` 库解析，支持标准 `.env` 格式
+   - 返回的配置数据都转换为 JSON 格式
+
+4. **安全考虑**:
+   - 所有配置操作都需要提供有效的实例ID
+   - 环境变量中可能包含敏感信息，请谨慎处理
+   - 建议在更新配置前备份原文件
 
 ## WebSocket 接口
 
