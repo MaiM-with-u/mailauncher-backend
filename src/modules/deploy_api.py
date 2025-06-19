@@ -401,13 +401,38 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
     """
     try:
         # 更新进度：验证安装路径
-        update_install_status(instance_id_str, "installing", 5, "正在验证安装路径...")
-
-        # 验证安装路径
-        deploy_path = Path(payload.install_path)
+        update_install_status(instance_id_str, "installing", 5, "正在验证安装路径...")        # 验证安装路径        # 如果路径以~开头，展开为相对于当前工作目录的路径
+        install_path = payload.install_path
+        logger.info(f"原始路径: '{install_path}', 长度: {len(install_path)}, 第一个字符: '{install_path[0] if install_path else 'None'}' (实例ID: {instance_id_str})")
+        logger.info(f"检查是否以~开头: {install_path.startswith('~')} (实例ID: {instance_id_str})")
+        
+        if install_path.startswith("~"):
+            # 获取当前工作目录（启动器后端的根目录）
+            current_dir = Path.cwd()
+            logger.info(f"当前工作目录: {current_dir} (实例ID: {instance_id_str})")
+            
+            # 将~替换为当前工作目录
+            if install_path.startswith("~/") or install_path.startswith("~\\"):
+                # 移除 ~/ 或 ~\ 前缀，然后与当前目录拼接
+                relative_path = install_path[2:]
+                logger.info(f"相对路径部分: '{relative_path}' (实例ID: {instance_id_str})")
+                install_path = str(current_dir / relative_path)
+            else:
+                # 只有 ~ 的情况，移除~前缀
+                relative_path = install_path[1:] if len(install_path) > 1 else ""
+                if relative_path:
+                    install_path = str(current_dir / relative_path)
+                else:
+                    install_path = str(current_dir)
+            logger.info(f"展开~路径: {payload.install_path} -> {install_path} (实例ID: {instance_id_str})")
+        else:
+            logger.info(f"路径不以~开头，不进行展开 (实例ID: {instance_id_str})")
+        
+        deploy_path = Path(install_path)
 
         # 记录收到的路径信息
         logger.info(f"收到部署路径: {payload.install_path} (实例ID: {instance_id_str})")
+        logger.info(f"处理后的路径: {install_path} (实例ID: {instance_id_str})")
         logger.info(
             f"解析后的绝对路径: {deploy_path.resolve()} (实例ID: {instance_id_str})"
         )
