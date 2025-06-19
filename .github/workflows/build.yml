@@ -1,8 +1,7 @@
 name: Build Cross-Platform Executables
 
 on:
-  push:
-    branches: [ develop ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -127,13 +126,12 @@ jobs:
         body: |
           Automated cross-platform build from commit ${{ github.sha }}
           
-          **Platforms included:**
-          - 🪟 Windows (x64) - `MaiLauncher-Backend-Windows.exe`
+          **Platforms included:**          - 🪟 Windows (x64) - `MaiLauncher-Backend-Windows.exe`
           - 🐧 Linux (x64) - `MaiLauncher-Backend-Linux`
           - 🍎 macOS (x64) - `MaiLauncher-Backend-macOS`
           
-          **Changes in this build:**
-          ${{ github.event.head_commit.message }}
+          **Manual Build Triggered:**
+          Build manually triggered at ${{ github.run_number }}
           
           **Download Instructions:**
           1. Choose the appropriate file for your operating system
