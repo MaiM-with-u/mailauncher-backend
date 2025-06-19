@@ -728,7 +728,7 @@ async def add_existing_instance(payload: DeployRequest):
                 detail=f"实例 '{payload.instance_name}' (ID: {instance_id_str}) 已存在。",
             )
 
-        try:            # 创建实例记录
+        try:  # 创建实例记录
             new_instance_obj = instance_manager.create_instance(
                 name=payload.instance_name,
                 version=payload.version,

@@ -826,14 +826,15 @@ async def get_person_info_batch(instance_id: str, request: PersonInfoBatchReques
 
 # ================ Bot Config API ================
 
+
 @router.get("/resources/{instance_id}/config/get", response_model=DataResponse)
 async def get_bot_config(instance_id: str):
     """
     获取指定实例的bot配置文件内容
-    
+
     Args:
         instance_id: 实例ID
-        
+
     Returns:
         DataResponse: 包含bot配置的JSON数据
     """
@@ -842,42 +843,43 @@ async def get_bot_config(instance_id: str):
         instance = instance_manager.get_instance(instance_id)
         if not instance:
             raise HTTPException(status_code=404, detail=f"实例 {instance_id} 不存在")
-        
+
         # 构建配置文件路径
         config_path = os.path.join(instance.path, "config", "bot_config.toml")
-        
+
         # 检查文件是否存在
         if not os.path.exists(config_path):
-            raise HTTPException(status_code=404, detail=f"Bot配置文件不存在: {config_path}")
-          # 读取并解析TOML文件
+            raise HTTPException(
+                status_code=404, detail=f"Bot配置文件不存在: {config_path}"
+            )
+        # 读取并解析TOML文件
         try:
-            with open(config_path, 'r', encoding='utf-8') as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 config_data = tomlkit.load(f).unwrap()
-            
+
             logger.info(f"成功获取实例 {instance_id} 的bot配置")
             return DataResponse(
-                status="success",
-                message="获取bot配置成功",
-                data=config_data
+                status="success", message="获取bot配置成功", data=config_data
             )
         except tomlkit.exceptions.TOMLKitError as e:
             raise HTTPException(status_code=400, detail=f"TOML文件格式错误: {str(e)}")
-            
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"获取bot配置时发生错误: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"获取bot配置失败: {str(e)}")
 
+
 @router.post("/resources/{instance_id}/config/update", response_model=BaseResponse)
 async def update_bot_config(instance_id: str, config_update: ConfigUpdateRequest):
     """
     更新指定实例的bot配置文件
-    
+
     Args:
         instance_id: 实例ID
         config_update: 配置更新请求
-        
+
     Returns:
         BaseResponse: 操作结果
     """
@@ -886,42 +888,41 @@ async def update_bot_config(instance_id: str, config_update: ConfigUpdateRequest
         instance = instance_manager.get_instance(instance_id)
         if not instance:
             raise HTTPException(status_code=404, detail=f"实例 {instance_id} 不存在")
-        
+
         # 构建配置文件路径
         config_path = os.path.join(instance.path, "config", "bot_config.toml")
-          # 确保配置目录存在
+        # 确保配置目录存在
         config_dir = os.path.dirname(config_path)
         os.makedirs(config_dir, exist_ok=True)
-        
+
         # 写入TOML文件
         try:
-            with open(config_path, 'w', encoding='utf-8') as f:
+            with open(config_path, "w", encoding="utf-8") as f:
                 tomlkit.dump(config_update.config_data, f)
-            
+
             logger.info(f"成功更新实例 {instance_id} 的bot配置")
-            return BaseResponse(
-                status="success",
-                message="更新bot配置成功"
-            )
+            return BaseResponse(status="success", message="更新bot配置成功")
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"写入TOML文件失败: {str(e)}")
-            
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"更新bot配置时发生错误: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"更新bot配置失败: {str(e)}")
 
+
 # ================ LPMM Config API ================
+
 
 @router.get("/resources/{instance_id}/lpmm/get", response_model=DataResponse)
 async def get_lpmm_config(instance_id: str):
     """
     获取指定实例的LPMM配置文件内容
-    
+
     Args:
         instance_id: 实例ID
-        
+
     Returns:
         DataResponse: 包含LPMM配置的JSON数据
     """
@@ -930,42 +931,43 @@ async def get_lpmm_config(instance_id: str):
         instance = instance_manager.get_instance(instance_id)
         if not instance:
             raise HTTPException(status_code=404, detail=f"实例 {instance_id} 不存在")
-        
+
         # 构建配置文件路径
         config_path = os.path.join(instance.path, "config", "lpmm_config.toml")
-        
+
         # 检查文件是否存在
         if not os.path.exists(config_path):
-            raise HTTPException(status_code=404, detail=f"LPMM配置文件不存在: {config_path}")        
+            raise HTTPException(
+                status_code=404, detail=f"LPMM配置文件不存在: {config_path}"
+            )
         # 读取并解析TOML文件
         try:
-            with open(config_path, 'r', encoding='utf-8') as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 config_data = tomlkit.load(f).unwrap()
-            
+
             logger.info(f"成功获取实例 {instance_id} 的LPMM配置")
             return DataResponse(
-                status="success",
-                message="获取LPMM配置成功",
-                data=config_data
+                status="success", message="获取LPMM配置成功", data=config_data
             )
         except tomlkit.exceptions.TOMLKitError as e:
             raise HTTPException(status_code=400, detail=f"TOML文件格式错误: {str(e)}")
-            
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"获取LPMM配置时发生错误: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"获取LPMM配置失败: {str(e)}")
 
+
 @router.post("/resources/{instance_id}/lpmm/update", response_model=BaseResponse)
 async def update_lpmm_config(instance_id: str, config_update: ConfigUpdateRequest):
     """
     更新指定实例的LPMM配置文件
-    
+
     Args:
         instance_id: 实例ID
         config_update: 配置更新请求
-        
+
     Returns:
         BaseResponse: 操作结果
     """
@@ -974,42 +976,41 @@ async def update_lpmm_config(instance_id: str, config_update: ConfigUpdateReques
         instance = instance_manager.get_instance(instance_id)
         if not instance:
             raise HTTPException(status_code=404, detail=f"实例 {instance_id} 不存在")
-        
+
         # 构建配置文件路径
-        config_path = os.path.join(instance.path, "config", "lpmm_config.toml")        
+        config_path = os.path.join(instance.path, "config", "lpmm_config.toml")
         # 确保配置目录存在
         config_dir = os.path.dirname(config_path)
         os.makedirs(config_dir, exist_ok=True)
-        
+
         # 写入TOML文件
         try:
-            with open(config_path, 'w', encoding='utf-8') as f:
+            with open(config_path, "w", encoding="utf-8") as f:
                 tomlkit.dump(config_update.config_data, f)
-            
+
             logger.info(f"成功更新实例 {instance_id} 的LPMM配置")
-            return BaseResponse(
-                status="success",
-                message="更新LPMM配置成功"
-            )
+            return BaseResponse(status="success", message="更新LPMM配置成功")
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"写入TOML文件失败: {str(e)}")
-            
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"更新LPMM配置时发生错误: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"更新LPMM配置失败: {str(e)}")
 
+
 # ================ ENV File API ================
+
 
 @router.get("/resources/{instance_id}/env/get", response_model=DataResponse)
 async def get_env_config(instance_id: str):
     """
     获取指定实例的环境变量配置
-    
+
     Args:
         instance_id: 实例ID
-        
+
     Returns:
         DataResponse: 包含环境变量的JSON数据
     """
@@ -1018,42 +1019,47 @@ async def get_env_config(instance_id: str):
         instance = instance_manager.get_instance(instance_id)
         if not instance:
             raise HTTPException(status_code=404, detail=f"实例 {instance_id} 不存在")
-        
+
         # 构建环境变量文件路径
         env_path = os.path.join(instance.path, ".env")
-        
+
         # 检查文件是否存在
         if not os.path.exists(env_path):
-            raise HTTPException(status_code=404, detail=f"环境变量文件不存在: {env_path}")
-        
+            raise HTTPException(
+                status_code=404, detail=f"环境变量文件不存在: {env_path}"
+            )
+
         # 使用python-dotenv解析.env文件
         try:
             env_data = dotenv_values(env_path)
-            
+
             logger.info(f"成功获取实例 {instance_id} 的环境变量配置")
             return DataResponse(
                 status="success",
                 message="获取环境变量配置成功",
-                data=dict(env_data)  # 转换为普通字典
+                data=dict(env_data),  # 转换为普通字典
             )
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"解析环境变量文件失败: {str(e)}")
-            
+            raise HTTPException(
+                status_code=400, detail=f"解析环境变量文件失败: {str(e)}"
+            )
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"获取环境变量配置时发生错误: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"获取环境变量配置失败: {str(e)}")
 
+
 @router.post("/resources/{instance_id}/env/update", response_model=BaseResponse)
 async def update_env_config(instance_id: str, env_update: EnvUpdateRequest):
     """
     更新指定实例的环境变量配置
-    
+
     Args:
         instance_id: 实例ID
         env_update: 环境变量更新请求
-        
+
     Returns:
         BaseResponse: 操作结果
     """
@@ -1062,30 +1068,29 @@ async def update_env_config(instance_id: str, env_update: EnvUpdateRequest):
         instance = instance_manager.get_instance(instance_id)
         if not instance:
             raise HTTPException(status_code=404, detail=f"实例 {instance_id} 不存在")
-        
+
         # 构建环境变量文件路径
         env_path = os.path.join(instance.path, ".env")
-        
+
         # 写入.env文件
         try:
-            with open(env_path, 'w', encoding='utf-8') as f:
+            with open(env_path, "w", encoding="utf-8") as f:
                 for key, value in env_update.env_data.items():
                     # 处理值中的特殊字符，如果值包含空格或特殊字符需要加引号
-                    if ' ' in value or '"' in value or "'" in value or '\n' in value:
+                    if " " in value or '"' in value or "'" in value or "\n" in value:
                         # 转义双引号并用双引号包围
                         escaped_value = value.replace('"', '\\"')
                         f.write(f'{key}="{escaped_value}"\n')
                     else:
-                        f.write(f'{key}={value}\n')
-            
+                        f.write(f"{key}={value}\n")
+
             logger.info(f"成功更新实例 {instance_id} 的环境变量配置")
-            return BaseResponse(
-                status="success",
-                message="更新环境变量配置成功"
-            )
+            return BaseResponse(status="success", message="更新环境变量配置成功")
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"写入环境变量文件失败: {str(e)}")
-            
+            raise HTTPException(
+                status_code=400, detail=f"写入环境变量文件失败: {str(e)}"
+            )
+
     except HTTPException:
         raise
     except Exception as e:
