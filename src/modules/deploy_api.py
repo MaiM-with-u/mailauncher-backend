@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException, Body, BackgroundTasks
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any  # Add Dict and Any for type hinting
+from pathlib import Path  # 添加 Path 导入
 from src.modules.instance_manager import (
     instance_manager,
     InstanceStatus,
@@ -15,11 +16,9 @@ from src.utils.database import engine
 from sqlmodel import Session, select
 from sqlalchemy.exc import IntegrityError
 import httpx
-from src.tools.deploy_version import (
-    deploy_manager,
+from src.tools.deploy_version import (    deploy_manager,
     get_python_executable,
 )  # 导入部署管理器和Python路径检测器
-from pathlib import Path  # Add Path import
 import subprocess
 import os
 import threading
@@ -403,7 +402,8 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
         # 更新进度：验证安装路径
         update_install_status(
             instance_id_str, "installing", 5, "正在验证安装路径..."
-        )  # 验证安装路径        # 如果路径以~开头，展开为相对于当前工作目录的路径
+        )        # 验证安装路径        
+        # 如果路径以~开头，展开为相对于当前工作目录的路径
         install_path = payload.install_path
         logger.info(
             f"原始路径: '{install_path}', 长度: {len(install_path)}, 第一个字符: '{install_path[0] if install_path else 'None'}' (实例ID: {instance_id_str})"
@@ -411,6 +411,12 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
         logger.info(
             f"检查是否以~开头: {install_path.startswith('~')} (实例ID: {instance_id_str})"
         )
+        
+        # 检查路径是否有重复问题
+        if install_path.count('MaiBot\\Deployments') > 1 or install_path.count('MaiBot/Deployments') > 1:
+            logger.warning(
+                f"检测到路径重复问题: {install_path} (实例ID: {instance_id_str})"
+            )
 
         if install_path.startswith("~"):
             # 获取当前工作目录（启动器后端的根目录）
@@ -499,8 +505,7 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
             instance_id_str, "installing", 15, "正在下载 MaiBot 源代码..."
         )
 
-        # 使用 deploy_manager 执行实际部署操作
-        # 将 payload.install_path 替换为 instance_id_str
+        # 使用 deploy_manager 执行实际部署操作        # 将 payload.install_path 替换为 instance_id_str
         # 并且传入 payload.install_services
         # 在线程池中执行同步的部署操作，避免阻塞事件循环
         loop = asyncio.get_event_loop()
@@ -510,13 +515,38 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
             instance_id_str, "installing", 25, "正在解压和配置文件..."
         )
 
+        # 准备展开后的服务配置给 deploy_manager
+        expanded_services = []
+        for service in payload.install_services:
+            service_dict = service.model_dump()
+            service_path = service_dict["path"]
+            
+            # 展开服务路径中的 ~ 符号（如果存在）
+            if service_path.startswith("~"):
+                current_dir = Path.cwd()
+                if service_path.startswith("~/") or service_path.startswith("~\\"):
+                    relative_path = service_path[2:]
+                    service_path = str(current_dir / relative_path)
+                else:
+                    relative_path = service_path[1:] if len(service_path) > 1 else ""
+                    if relative_path:
+                        service_path = str(current_dir / relative_path)
+                    else:
+                        service_path = str(current_dir)
+                service_dict["path"] = service_path
+                logger.info(
+                    f"为 deploy_manager 展开服务路径: {service.path} -> {service_path} (服务: {service.name}, 实例ID: {instance_id_str})"
+                )
+            
+            expanded_services.append(service_dict)
+
         deploy_success = await loop.run_in_executor(
             None,
             deploy_manager.deploy_version,
             payload.version,
             deploy_path,
             instance_id_str,
-            [service.model_dump() for service in payload.install_services],
+            expanded_services,  # 使用展开后的服务配置
             str(payload.port),  # 添加缺失的 instance_port 参数
         )
 
@@ -622,13 +652,30 @@ async def save_instance_to_database(payload: DeployRequest, instance_id_str: str
             # 更新状态：创建服务配置
             update_install_status(
                 instance_id_str, "installing", 85, "正在配置服务信息..."
-            )  # 初始化服务状态
+            )            # 初始化服务状态
             services_status = []
             for service_config in payload.install_services:
+                # 展开服务路径中的 ~ 符号（如果存在）
+                service_path = service_config.path
+                if service_path.startswith("~"):
+                    current_dir = Path.cwd()
+                    if service_path.startswith("~/") or service_path.startswith("~\\"):
+                        relative_path = service_path[2:]
+                        service_path = str(current_dir / relative_path)
+                    else:
+                        relative_path = service_path[1:] if len(service_path) > 1 else ""
+                        if relative_path:
+                            service_path = str(current_dir / relative_path)
+                        else:
+                            service_path = str(current_dir)
+                    logger.info(
+                        f"展开服务路径: {service_config.path} -> {service_path} (服务: {service_config.name}, 实例ID: {instance_id_str})"
+                    )
+                
                 db_service = DB_Service(
                     instance_id=instance_id_str,
                     name=service_config.name,
-                    path=service_config.path,
+                    path=service_path,  # 使用展开后的路径
                     status="pending",
                     port=service_config.port,
                     run_cmd=service_config.run_cmd,  # 添加 run_cmd
