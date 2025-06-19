@@ -54,6 +54,8 @@ class DeployRequest(BaseModel):
         None, description="适配器文件夹路径（用于已有实例）"
     )
     qq_number: Optional[str] = Field(None, description="关联的QQ号")
+    host: Optional[str] = Field("localhost", description="实例主机地址")
+    token: Optional[str] = Field("", description="实例访问令牌")
 
 
 class DeployResponse(BaseModel):
