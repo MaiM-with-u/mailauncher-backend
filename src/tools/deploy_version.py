@@ -10,9 +10,30 @@ import hashlib  # 添加hashlib导入，用于生成确认文件哈希
 # import errno # For error codes
 
 # Import List for type hinting
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Callable, Optional
 
 logger = get_module_logger("版本部署工具")
+
+# 声明全局日志回调函数变量
+_log_callback: Optional[Callable[[str, str, str], None]] = None
+
+def set_log_callback(callback: Callable[[str, str, str], None]):
+    """
+    设置日志回调函数
+    
+    Args:
+        callback: 回调函数，接受(instance_id, message, level)参数
+    """
+    global _log_callback
+    _log_callback = callback
+
+def _add_log(instance_id: str, message: str, level: str = "info"):
+    """
+    添加日志，如果设置了回调函数则调用，否则只记录到标准日志
+    """
+    logger.info(f"[{instance_id}] {message}")
+    if _log_callback:
+        _log_callback(instance_id, message, level)
 
 
 def get_python_executable() -> str:
@@ -343,11 +364,11 @@ def setup_service_virtual_environment(
         instance_id: 实例ID
 
     Returns:
-        bool: 设置成功返回True，失败返回False
-    """
+        bool: 设置成功返回True，失败返回False    """
     logger.info(
         f"开始为服务 {service_name} (实例ID: {instance_id}) 在 {service_path} 设置虚拟环境..."
     )
+    _add_log(instance_id, f"🔧 开始设置 {service_name} 虚拟环境", "info")
 
     try:
         # 将工作目录切换到服务目录
@@ -356,32 +377,35 @@ def setup_service_virtual_environment(
             logger.error(
                 f"服务目录 {service_dir} 不存在 (服务: {service_name}, 实例ID: {instance_id})"
             )
+            _add_log(instance_id, f"❌ 服务目录不存在: {service_dir}", "error")
             return False
         logger.info(
             f"切换工作目录到: {service_dir} (服务: {service_name}, 实例ID: {instance_id})"
         )
+        _add_log(instance_id, f"📁 服务目录: {service_dir}", "info")
 
         # 创建虚拟环境目录路径
-        venv_path = service_dir / "venv"
-
-        # 获取正确的Python解释器路径
+        venv_path = service_dir / "venv"        # 获取正确的Python解释器路径
         try:
             python_executable = get_python_executable()
+            _add_log(instance_id, f"🐍 Python解释器: {python_executable}", "info")
         except RuntimeError as e:
             logger.error(
                 f"获取Python解释器失败 (服务: {service_name}, 实例ID: {instance_id}): {e}"
             )
+            _add_log(instance_id, f"❌ 获取Python解释器失败: {e}", "error")
             return False
 
         # 1. 创建虚拟环境
         logger.info(
             f"创建虚拟环境 {venv_path} (服务: {service_name}, 实例ID: {instance_id})"
         )
+        _add_log(instance_id, f"🔨 创建虚拟环境: {venv_path.name}", "info")
         logger.info(
             f"使用Python解释器: {python_executable} (服务: {service_name}, 实例ID: {instance_id})"
         )
         create_venv_cmd = [python_executable, "-m", "venv", str(venv_path)]
-
+        
         result = subprocess.run(
             create_venv_cmd,
             cwd=str(service_dir),
@@ -390,11 +414,12 @@ def setup_service_virtual_environment(
             timeout=300,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
-
+        
         if result.returncode != 0:
             logger.error(
                 f"创建虚拟环境失败 (服务: {service_name}, 实例ID: {instance_id}): {result.stderr}"
             )
+            _add_log(instance_id, f"❌ 虚拟环境创建失败: {result.stderr or '未知错误'}", "error")
             return False
 
         logger.info(f"虚拟环境创建成功 (服务: {service_name}, 实例ID: {instance_id})")
@@ -436,13 +461,12 @@ def setup_service_virtual_environment(
             "pip",
             "install",
             "--upgrade",
-            "pip",
-            "-i",
+            "pip",            "-i",
             "https://mirrors.aliyun.com/pypi/simple/",
             "--trusted-host",
             "mirrors.aliyun.com",
         ]
-
+        
         result = subprocess.run(
             upgrade_pip_cmd,
             cwd=str(service_dir),
@@ -451,17 +475,23 @@ def setup_service_virtual_environment(
             timeout=300,
             creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
         )
-
+        
         if result.returncode != 0:
             logger.warning(
                 f"升级pip失败 (服务: {service_name}, 实例ID: {instance_id}): {result.stderr}"
             )
+            _add_log(instance_id, f"⚠️ pip升级失败，但继续安装依赖", "warning")
         else:
             logger.info(
                 f"pip升级成功 (服务: {service_name}, 实例ID: {instance_id})"
-            )  # 安装requirements.txt中的依赖
+            )
+            _add_log(instance_id, f"✅ pip升级成功", "success")
+            
+        # 安装requirements.txt中的依赖
+        _add_log(instance_id, f"📦 开始安装 {service_name} 依赖包", "info")
         install_deps_cmd = [
-            str(venv_pip_executable),            "install",
+            str(venv_pip_executable),
+            "install",
             "-r",
             str(requirements_file),
             "-i",
