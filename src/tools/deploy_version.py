@@ -461,8 +461,7 @@ def setup_service_virtual_environment(
                 f"pip升级成功 (服务: {service_name}, 实例ID: {instance_id})"
             )  # 安装requirements.txt中的依赖
         install_deps_cmd = [
-            str(venv_pip_executable),
-            "install",
+            str(venv_pip_executable),            "install",
             "-r",
             str(requirements_file),
             "-i",
@@ -475,19 +474,31 @@ def setup_service_virtual_environment(
             f"执行依赖安装命令: {' '.join(install_deps_cmd)} (服务: {service_name}, 实例ID: {instance_id})"
         )
 
-        result = subprocess.run(
-            install_deps_cmd,
-            cwd=str(service_dir),
-            capture_output=True,
-            text=True,
-            timeout=600,  # 依赖安装可能需要更长时间
-            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-        )
-
-        if result.returncode != 0:
-            logger.error(
-                f"依赖安装失败 (服务: {service_name}, 实例ID: {instance_id}): {result.stderr}"
+        try:
+            result = subprocess.run(
+                install_deps_cmd,
+                cwd=str(service_dir),
+                capture_output=True,
+                text=True,
+                timeout=900,  # 增加超时时间到15分钟
+                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
             )
+
+            if result.returncode != 0:
+                error_msg = result.stderr if result.stderr else "未知错误"
+                logger.error(
+                    f"依赖安装失败 (服务: {service_name}, 实例ID: {instance_id}): {error_msg}"
+                )
+                
+                # 记录详细的错误信息用于调试
+                if result.stdout:
+                    logger.error(f"pip stdout: {result.stdout}")
+                if result.stderr:
+                    logger.error(f"pip stderr: {result.stderr}")
+                    
+                return False
+        except subprocess.TimeoutExpired:
+            logger.error(f"依赖安装超时 (服务: {service_name}, 实例ID: {instance_id})")
             return False
 
         logger.info(f"依赖安装成功 (服务: {service_name}, 实例ID: {instance_id})")

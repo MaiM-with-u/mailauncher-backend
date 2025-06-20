@@ -23,7 +23,9 @@ import subprocess
 import os
 import threading
 import asyncio
+import time
 from datetime import datetime
+import time  # 添加 time 导入
 
 logger = get_module_logger("部署API")  # 修改 logger 名称
 router = APIRouter()
@@ -107,7 +109,9 @@ def update_install_status(
     """
     with cache_lock:
         if instance_id not in install_status_cache:
-            install_status_cache[instance_id] = {}
+            install_status_cache[instance_id] = {
+                "start_time": time.time()  # 记录开始时间
+            }
 
         install_status_cache[instance_id].update(
             {
@@ -394,6 +398,48 @@ async def get_install_status(instance_id: str):
     )
 
 
+@router.get("/install-status/{instance_id}")
+async def get_install_status_detailed(instance_id: str):
+    """
+    获取详细的安装状态信息，包括更多诊断信息
+    """
+    try:
+        with cache_lock:
+            status_info = install_status_cache.get(instance_id)
+            
+        if not status_info:
+            # 检查实例是否已经完成部署
+            with Session(engine) as session:
+                instance = session.get(DB_Instance, instance_id)
+                if instance:
+                    return InstallStatusResponse(
+                        status="completed",
+                        progress=100,
+                        message="实例部署已完成",
+                        services_install_status=[]
+                    )
+            
+            raise HTTPException(status_code=404, detail="安装状态未找到")        # 检查是否是长时间卡在依赖安装阶段
+        if (status_info.get("status") == "installing" and 
+            70 <= status_info.get("progress", 0) <= 73):
+            elapsed_time = time.time() - status_info.get("start_time", time.time())
+            if elapsed_time > 300:  # 超过5分钟
+                status_info["message"] += f" (已进行{int(elapsed_time/60)}分钟，大型依赖包安装需要较长时间)"
+
+        return InstallStatusResponse(
+            status=status_info.get("status", "unknown"),
+            progress=status_info.get("progress", 0),
+            message=status_info.get("message", ""),
+            services_install_status=status_info.get("services_install_status", []),
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取安装状态时发生错误: {e}")
+        raise HTTPException(status_code=500, detail="获取安装状态失败")
+
+
 async def perform_deployment_background(payload: DeployRequest, instance_id_str: str):
     """
     在后台执行部署任务的异步函数
@@ -402,8 +448,7 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
         # 更新进度：验证安装路径
         update_install_status(
             instance_id_str, "installing", 5, "正在验证安装路径..."
-        )        # 验证安装路径        
-        # 如果路径以~开头，展开为相对于当前工作目录的路径
+        )  # 验证安装路径        # 如果路径以~开头，展开为相对于当前工作目录的路径
         install_path = payload.install_path
         logger.info(
             f"原始路径: '{install_path}', 长度: {len(install_path)}, 第一个字符: '{install_path[0] if install_path else 'None'}' (实例ID: {instance_id_str})"
@@ -411,12 +456,6 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
         logger.info(
             f"检查是否以~开头: {install_path.startswith('~')} (实例ID: {instance_id_str})"
         )
-        
-        # 检查路径是否有重复问题
-        if install_path.count('MaiBot\\Deployments') > 1 or install_path.count('MaiBot/Deployments') > 1:
-            logger.warning(
-                f"检测到路径重复问题: {install_path} (实例ID: {instance_id_str})"
-            )
 
         if install_path.startswith("~"):
             # 获取当前工作目录（启动器后端的根目录）
@@ -503,9 +542,7 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
         # 更新进度：准备部署文件
         update_install_status(
             instance_id_str, "installing", 15, "正在下载 MaiBot 源代码..."
-        )
-
-        # 使用 deploy_manager 执行实际部署操作        # 将 payload.install_path 替换为 instance_id_str
+        )        # 使用 deploy_manager 执行实际部署操作        # 将 payload.install_path 替换为 instance_id_str
         # 并且传入 payload.install_services
         # 在线程池中执行同步的部署操作，避免阻塞事件循环
         loop = asyncio.get_event_loop()
@@ -560,13 +597,12 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
         # 更新进度：部署文件完成
         update_install_status(
             instance_id_str,
-            "installing",
-            35,
+            "installing",            35,
             "MaiBot 文件部署完成，正在验证文件完整性...",
         )
 
         logger.info(
-            f"版本 {payload.version} 已成功部署到 {payload.install_path}。现在设置虚拟环境..."
+            f"版本 {payload.version} 已成功部署到 {install_path}。现在设置虚拟环境..."
         )
 
         # 更新进度：开始环境配置
@@ -575,8 +611,12 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
         )
 
         # 设置虚拟环境并安装依赖
+        logger.info(f"开始为实例 {instance_id_str} 在 {install_path} 设置虚拟环境...")
+        update_install_status(
+            instance_id_str, "installing", 45, "正在创建虚拟环境..."
+        )
         venv_success = await setup_virtual_environment_background(
-            payload.install_path, instance_id_str
+            install_path, instance_id_str  # 使用展开后的路径
         )
         if not venv_success:
             logger.error(f"为实例 {instance_id_str} 设置虚拟环境失败")
@@ -587,9 +627,9 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
 
         # 更新进度：虚拟环境设置完成
         update_install_status(
-            instance_id_str, "installing", 80, "虚拟环境设置完成，正在保存实例信息..."
-        )  # 在数据库中保存实例信息
-        await save_instance_to_database(payload, instance_id_str)
+            instance_id_str, "installing", 80, "虚拟环境设置完成，正在保存实例信息..."        )
+        # 在数据库中保存实例信息
+        await save_instance_to_database(payload, instance_id_str, install_path)
 
     except Exception as e:
         logger.error(f"后台部署任务发生异常 (实例ID: {instance_id_str}): {e}")
@@ -621,7 +661,7 @@ async def perform_deployment_background(payload: DeployRequest, instance_id_str:
         )
 
 
-async def save_instance_to_database(payload: DeployRequest, instance_id_str: str):
+async def save_instance_to_database(payload: DeployRequest, instance_id_str: str, expanded_install_path: str):
     """
     将实例信息保存到数据库
     """
@@ -633,7 +673,7 @@ async def save_instance_to_database(payload: DeployRequest, instance_id_str: str
             new_instance_obj = instance_manager.create_instance(
                 name=payload.instance_name,
                 version=payload.version,
-                path=payload.install_path,
+                path=expanded_install_path,  # 使用展开后的路径
                 status=InstanceStatus.STOPPED,  # 初始状态为 STOPPED
                 host=payload.host,
                 port=payload.port,
@@ -702,12 +742,13 @@ async def save_instance_to_database(payload: DeployRequest, instance_id_str: str
             # 更新状态：最终完成
             update_install_status(
                 instance_id_str, "installing", 95, "正在完成最后配置..."
-            )
-
-            # 更新进度：完成部署
+            )            # 更新进度：完成部署
             update_install_status(
                 instance_id_str, "completed", 100, "部署完成！", services_status
             )
+
+            # 安排延迟清理缓存
+            asyncio.create_task(cleanup_install_status_cache(instance_id_str))
 
             logger.info(
                 f"实例 {payload.instance_name} (ID: {instance_id_str}) 及关联服务已成功记录到数据库。"
@@ -882,26 +923,70 @@ async def setup_virtual_environment_background(
 
         logger.info(
             f"执行依赖安装命令: {' '.join(install_deps_cmd)} (实例ID: {instance_id})"
-        )
+        )        # 更新状态：正在执行依赖安装
+        update_install_status(instance_id, "installing", 70, "正在执行依赖安装命令...")        # 创建一个异步函数来执行pip安装并提供实时反馈
+        async def install_dependencies_with_feedback():
+            try:
+                # 先更新状态表示开始安装
+                update_install_status(instance_id, "installing", 71, "正在下载和安装依赖包...")
+                
+                # 执行pip安装命令
+                process = await asyncio.create_subprocess_exec(
+                    *install_deps_cmd,
+                    cwd=str(install_dir),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                )
+                
+                # 启动进度跟踪任务
+                progress_task = asyncio.create_task(
+                    track_pip_installation_progress(instance_id, process, 71)
+                )
+                
+                try:
+                    # 等待进程完成，最多等待15分钟
+                    stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=900)
+                except asyncio.TimeoutError:
+                    process.kill()
+                    await process.wait()
+                    logger.error(f"依赖安装超时 (实例ID: {instance_id})")
+                    update_install_status(instance_id, "failed", 70, "依赖安装超时，请检查网络连接并重试")
+                    return False
+                finally:
+                    # 取消进度更新任务
+                    progress_task.cancel()
+                    try:
+                        await progress_task
+                    except asyncio.CancelledError:
+                        pass
+                
+                # 检查安装结果
+                if process.returncode != 0:
+                    error_msg = stderr.decode('utf-8', errors='ignore') if stderr else "未知错误"
+                    logger.error(f"依赖安装失败 (实例ID: {instance_id}): {error_msg}")
+                    # 根据错误类型提供更具体的错误信息
+                    if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
+                        update_install_status(instance_id, "failed", 70, "依赖安装超时，请检查网络连接并重试")
+                    elif "permission" in error_msg.lower() or "access" in error_msg.lower():
+                        update_install_status(instance_id, "failed", 70, "权限不足，请以管理员身份运行")
+                    elif "space" in error_msg.lower() or "disk" in error_msg.lower():
+                        update_install_status(instance_id, "failed", 70, "磁盘空间不足，请清理磁盘空间")
+                    else:
+                        update_install_status(instance_id, "failed", 70, f"依赖安装失败：{error_msg[:100]}")
+                    return False
+                    
+                return True
+                
+            except Exception as e:
+                logger.error(f"依赖安装过程中发生异常 (实例ID: {instance_id}): {e}")
+                update_install_status(instance_id, "failed", 70, f"安装过程异常：{str(e)}")
+                return False
 
-        # 更新状态：正在执行依赖安装
-        update_install_status(instance_id, "installing", 70, "正在执行依赖安装命令...")
-
-        result = await loop.run_in_executor(
-            None,
-            lambda: subprocess.run(
-                install_deps_cmd,
-                cwd=str(install_dir),
-                capture_output=True,
-                text=True,
-                timeout=600,  # 依赖安装可能需要更长时间
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-            ),
-        )
-
-        if result.returncode != 0:
-            logger.error(f"依赖安装失败 (实例ID: {instance_id}): {result.stderr}")
-            update_install_status(instance_id, "failed", 70, "依赖安装失败")
+        # 执行依赖安装
+        install_success = await install_dependencies_with_feedback()
+        
+        if not install_success:
             return False
 
         # 更新状态：依赖安装成功
@@ -1051,3 +1136,66 @@ def generate_venv_command(base_command: str, working_directory: str) -> str:
 
     logger.info(f"生成虚拟环境命令: {base_command} -> {venv_command}")
     return venv_command
+
+# 添加一个专门的依赖安装进度跟踪器
+async def track_pip_installation_progress(instance_id: str, process, base_progress: int = 70):
+    """
+    跟踪pip安装过程并提供实时进度更新
+    
+    Args:
+        instance_id: 实例ID
+        process: 异步进程对象
+        base_progress: 基础进度值
+    """
+    try:
+        progress = base_progress
+        last_update = time.time()
+        
+        while process.returncode is None:
+            current_time = time.time()
+            
+            # 每3秒更新一次进度
+            if current_time - last_update >= 3:
+                if progress < base_progress + 2:
+                    progress += 1
+                    status_messages = [
+                        "正在解析依赖关系...",
+                        "正在下载依赖包...", 
+                        "正在安装Python包...",
+                        "正在编译扩展模块...",
+                        "正在配置包依赖..."
+                    ]
+                    message_index = min((progress - base_progress), len(status_messages) - 1)
+                    update_install_status(
+                        instance_id, 
+                        "installing", 
+                        progress, 
+                        status_messages[message_index]
+                    )
+                    last_update = current_time
+            
+            await asyncio.sleep(1)
+            
+    except asyncio.CancelledError:
+        # 进程完成时正常取消
+        pass
+    except Exception as e:
+        logger.error(f"跟踪安装进度时出错 (实例ID: {instance_id}): {e}")
+
+
+async def cleanup_install_status_cache(instance_id: str, delay_seconds: int = 30):
+    """
+    延迟清理安装状态缓存，给前端足够时间读取完成状态
+    
+    Args:
+        instance_id: 实例ID
+        delay_seconds: 延迟时间（秒）
+    """
+    await asyncio.sleep(delay_seconds)
+    
+    with cache_lock:
+        if instance_id in install_status_cache:
+            status = install_status_cache[instance_id].get("status")
+            if status in ["completed", "failed"]:
+                del install_status_cache[instance_id]
+                logger.info(f"已清理实例 {instance_id} 的安装状态缓存")
