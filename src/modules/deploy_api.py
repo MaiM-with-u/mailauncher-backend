@@ -27,7 +27,6 @@ import threading
 import asyncio
 import time
 from datetime import datetime
-import time  # 添加 time 导入
 
 logger = get_module_logger("部署API")  # 修改 logger 名称
 router = APIRouter()
@@ -1049,7 +1048,7 @@ async def setup_virtual_environment_background(
         logger.info(
             f"执行依赖安装命令: {' '.join(install_deps_cmd)} (实例ID: {instance_id})"
         )
-        add_install_log(instance_id, f"🔧 执行安装命令: pip install -r requirements.txt", "info")
+        add_install_log(instance_id, "🔧 执行安装命令: pip install -r requirements.txt", "info")
         
         # 更新状态：正在执行依赖安装
         update_install_status(instance_id, "installing", 70, "正在执行依赖安装命令...")

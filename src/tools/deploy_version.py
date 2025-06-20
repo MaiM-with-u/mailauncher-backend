@@ -480,12 +480,12 @@ def setup_service_virtual_environment(
             logger.warning(
                 f"升级pip失败 (服务: {service_name}, 实例ID: {instance_id}): {result.stderr}"
             )
-            _add_log(instance_id, f"⚠️ pip升级失败，但继续安装依赖", "warning")
+            _add_log(instance_id, "⚠️ pip升级失败，但继续安装依赖", "warning")
         else:
             logger.info(
                 f"pip升级成功 (服务: {service_name}, 实例ID: {instance_id})"
             )
-            _add_log(instance_id, f"✅ pip升级成功", "success")
+            _add_log(instance_id, "✅ pip升级成功", "success")
             
         # 安装requirements.txt中的依赖
         _add_log(instance_id, f"📦 开始安装 {service_name} 依赖包", "info")
