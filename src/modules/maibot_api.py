@@ -1096,3 +1096,122 @@ async def update_env_config(instance_id: str, env_update: EnvUpdateRequest):
     except Exception as e:
         logger.error(f"更新环境变量配置时发生错误: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"更新环境变量配置失败: {str(e)}")
+
+
+# ================ Adapter Config API ================
+
+
+@router.get("/resources/{instance_id}/adapter/napcat/get", response_model=DataResponse)
+async def get_adapter_config(instance_id: str):
+    """
+    获取指定实例的适配器配置文件内容
+
+    Args:
+        instance_id: 实例ID
+
+    Returns:
+        DataResponse: 包含适配器配置的JSON数据
+    """
+    try:
+        # 获取实例信息
+        instance = instance_manager.get_instance(instance_id)
+        if not instance:
+            raise HTTPException(status_code=404, detail=f"实例 {instance_id} 不存在")
+
+        # 构建配置文件路径
+        config_path = os.path.join(instance.path, "napcat-ada", "config.toml")
+        template_path = os.path.join(instance.path, "napcat-ada", "template", "template_config.toml")
+
+        # 检查配置文件是否存在
+        if not os.path.exists(config_path):
+            # 检查模板文件是否存在
+            if os.path.exists(template_path):
+                try:
+                    # 确保目标目录存在
+                    config_dir = os.path.dirname(config_path)
+                    os.makedirs(config_dir, exist_ok=True)
+                    
+                    # 复制模板文件到配置文件位置
+                    import shutil
+                    shutil.copy2(template_path, config_path)
+                    logger.info(f"已从模板文件创建适配器配置文件: {config_path}")
+                except Exception as e:
+                    raise HTTPException(
+                        status_code=500, 
+                        detail=f"复制模板文件失败: {str(e)}"
+                    )
+            else:
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"适配器配置文件和模板文件都不存在: {config_path}, {template_path}"
+                )
+
+        # 读取并解析TOML文件
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                config_data = tomlkit.load(f).unwrap()
+
+            logger.info(f"成功获取实例 {instance_id} 的适配器配置")
+            return DataResponse(
+                status="success", message="获取适配器配置成功", data=config_data
+            )
+        except tomlkit.exceptions.TOMLKitError as e:
+            raise HTTPException(status_code=400, detail=f"TOML文件格式错误: {str(e)}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"获取适配器配置时发生错误: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"获取适配器配置失败: {str(e)}")
+
+
+@router.post("/resources/{instance_id}/adapter/napcat/update", response_model=BaseResponse)
+async def update_adapter_config(instance_id: str, config_update: ConfigUpdateRequest):
+    """
+    更新指定实例的适配器配置文件
+
+    Args:
+        instance_id: 实例ID
+        config_update: 配置更新请求
+
+    Returns:
+        BaseResponse: 操作结果
+    """
+    try:
+        # 获取实例信息
+        instance = instance_manager.get_instance(instance_id)
+        if not instance:
+            raise HTTPException(status_code=404, detail=f"实例 {instance_id} 不存在")
+
+        # 构建配置文件路径
+        config_path = os.path.join(instance.path, "napcat-ada", "config.toml")
+        template_path = os.path.join(instance.path, "napcat-ada", "template", "template_config.toml")
+        
+        # 确保配置目录存在
+        config_dir = os.path.dirname(config_path)
+        os.makedirs(config_dir, exist_ok=True)
+
+        # 如果配置文件不存在且模板文件存在，先复制模板文件
+        if not os.path.exists(config_path) and os.path.exists(template_path):
+            try:
+                import shutil
+                shutil.copy2(template_path, config_path)
+                logger.info(f"已从模板文件创建适配器配置文件: {config_path}")
+            except Exception as e:
+                logger.warning(f"复制模板文件失败，将直接创建新配置文件: {str(e)}")
+
+        # 写入TOML文件
+        try:
+            with open(config_path, "w", encoding="utf-8") as f:
+                tomlkit.dump(config_update.config_data, f)
+
+            logger.info(f"成功更新实例 {instance_id} 的适配器配置")
+            return BaseResponse(status="success", message="更新适配器配置成功")
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"写入TOML文件失败: {str(e)}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"更新适配器配置时发生错误: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"更新适配器配置失败: {str(e)}")
