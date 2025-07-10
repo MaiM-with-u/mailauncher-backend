@@ -1120,7 +1120,9 @@ async def get_adapter_config(instance_id: str):
 
         # 构建配置文件路径
         config_path = os.path.join(instance.path, "napcat-ada", "config.toml")
-        template_path = os.path.join(instance.path, "napcat-ada", "template", "template_config.toml")
+        template_path = os.path.join(
+            instance.path, "napcat-ada", "template", "template_config.toml"
+        )
 
         # 检查配置文件是否存在
         if not os.path.exists(config_path):
@@ -1130,20 +1132,20 @@ async def get_adapter_config(instance_id: str):
                     # 确保目标目录存在
                     config_dir = os.path.dirname(config_path)
                     os.makedirs(config_dir, exist_ok=True)
-                    
+
                     # 复制模板文件到配置文件位置
                     import shutil
+
                     shutil.copy2(template_path, config_path)
                     logger.info(f"已从模板文件创建适配器配置文件: {config_path}")
                 except Exception as e:
                     raise HTTPException(
-                        status_code=500, 
-                        detail=f"复制模板文件失败: {str(e)}"
+                        status_code=500, detail=f"复制模板文件失败: {str(e)}"
                     )
             else:
                 raise HTTPException(
-                    status_code=404, 
-                    detail=f"适配器配置文件和模板文件都不存在: {config_path}, {template_path}"
+                    status_code=404,
+                    detail=f"适配器配置文件和模板文件都不存在: {config_path}, {template_path}",
                 )
 
         # 读取并解析TOML文件
@@ -1165,7 +1167,9 @@ async def get_adapter_config(instance_id: str):
         raise HTTPException(status_code=500, detail=f"获取适配器配置失败: {str(e)}")
 
 
-@router.post("/resources/{instance_id}/adapter/napcat/update", response_model=BaseResponse)
+@router.post(
+    "/resources/{instance_id}/adapter/napcat/update", response_model=BaseResponse
+)
 async def update_adapter_config(instance_id: str, config_update: ConfigUpdateRequest):
     """
     更新指定实例的适配器配置文件
@@ -1185,8 +1189,10 @@ async def update_adapter_config(instance_id: str, config_update: ConfigUpdateReq
 
         # 构建配置文件路径
         config_path = os.path.join(instance.path, "napcat-ada", "config.toml")
-        template_path = os.path.join(instance.path, "napcat-ada", "template", "template_config.toml")
-        
+        template_path = os.path.join(
+            instance.path, "napcat-ada", "template", "template_config.toml"
+        )
+
         # 确保配置目录存在
         config_dir = os.path.dirname(config_path)
         os.makedirs(config_dir, exist_ok=True)
@@ -1195,6 +1201,7 @@ async def update_adapter_config(instance_id: str, config_update: ConfigUpdateReq
         if not os.path.exists(config_path) and os.path.exists(template_path):
             try:
                 import shutil
+
                 shutil.copy2(template_path, config_path)
                 logger.info(f"已从模板文件创建适配器配置文件: {config_path}")
             except Exception as e:
