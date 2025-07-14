@@ -10,6 +10,7 @@ from src.modules.instance_manager import (
 )  # instance_manager 已适配SQLModel
 from src.utils.logger import get_module_logger
 from src.utils.database_model import DB_Service, DB_Instance
+from datetime import datetime
 from src.utils.database import engine  # SQLModel 引擎
 from sqlmodel import Session, select  # SQLModel Session - 添加 select
 from winpty import PtyProcess  # type: ignore
@@ -89,13 +90,14 @@ class InstanceDetail(BaseModel):
     id: str  # 实例ID
     name: str  # 实例名称
     status: str  # 状态
-    installedAt: Optional[str] = (
-        None  # 假设 installedAt 可能不总是存在或是字符串表示形式
-    )
+    installedAt: Optional[str] = None
     path: str  # 路径
     port: int  # 端口
     services: List[ServiceDetail]  # 服务列表
     version: str  # 版本
+    total_runtime: Optional[int] = 0  # 累计运行时长（秒）
+    start_count: Optional[int] = 0  # 启动次数
+    last_start_time: Optional[str] = None  # 最后一次启动时间（ISO 格式字符串）
 
 
 class GetInstancesResponse(BaseModel):
@@ -402,14 +404,15 @@ async def get_instances():
                 instance_detail = InstanceDetail(
                     id=db_instance.instance_id,
                     name=db_instance.name,
-                    status=db_instance.status.value
-                    if isinstance(db_instance.status, InstanceStatus)
-                    else db_instance.status,  # 处理枚举类型
-                    installedAt=created_at_str,  # 使用转换后的字符串
+                    status=db_instance.status.value if isinstance(db_instance.status, InstanceStatus) else db_instance.status,
+                    installedAt=created_at_str,
                     path=db_instance.path,
                     port=db_instance.port,
                     services=services_details,
                     version=db_instance.version,
+                    total_runtime=db_instance.total_runtime if hasattr(db_instance, 'total_runtime') else 0,
+                    start_count=db_instance.start_count if hasattr(db_instance, 'start_count') else 0,
+                    last_start_time=db_instance.last_start_time if hasattr(db_instance, 'last_start_time') else None,
                 )
                 response_instances.append(instance_detail)
 
@@ -467,6 +470,17 @@ async def start_instance(instance_id: str):
     # 1. 更新实例状态为 STARTING
     instance_manager.update_instance_status(instance_id, InstanceStatus.STARTING)
     logger.info(f"实例 {instance_id} 状态已更新为“启动中”。")
+    # 记录启动时间并递增启动次数到数据库，确保 last_start_time 每次都写入并 commit
+    now_str = datetime.utcnow().isoformat()
+    with Session(engine) as session:
+        db_instance = session.exec(select(DB_Instance).where(DB_Instance.instance_id == instance_id)).first()
+        if db_instance:
+            # 总是写入当前时间，避免 last_start_time 为 NULL
+            db_instance.last_start_time = now_str
+            # start_count 递增
+            db_instance.start_count = (db_instance.start_count or 0) + 1
+            session.add(db_instance)
+            session.commit()
 
     started_any_process = False
 
@@ -584,9 +598,22 @@ async def stop_instance(instance_id: str):  # sourcery skip: use-named-expressio
     await stop_all_ptys_for_instance(instance_id)
     logger.info(f"实例 {instance_id} 的 stop_all_ptys_for_instance 清理完成。")
 
+    # 统计本次运行时长并累加到 total_runtime
+    with Session(engine) as session:
+        db_instance = session.exec(select(DB_Instance).where(DB_Instance.instance_id == instance_id)).first()
+        if db_instance:
+            if db_instance.last_start_time:
+                try:
+                    start_time = datetime.fromisoformat(db_instance.last_start_time)
+                    now = datetime.utcnow()
+                    duration = int((now - start_time).total_seconds())
+                    db_instance.total_runtime = (db_instance.total_runtime or 0) + duration
+                except Exception as e:
+                    logger.warning(f"实例 {instance_id} 运行时长统计失败: {e}")
+            db_instance.last_start_time = None
+            session.add(db_instance)
+            session.commit()
     # 4. 更新实例状态为 STOPPED
-    # 无论个别 PTY 停止是否报告问题，最终都将状态设置为 STOPPED
-    # 因为目标是停止实例。
     updated_instance = instance_manager.update_instance_status(
         instance_id, InstanceStatus.STOPPED
     )

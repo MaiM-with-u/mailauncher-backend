@@ -22,6 +22,9 @@ class DB_Instance(SQLModel, table=True):
     created_at: datetime.datetime = Field(
         default_factory=datetime.datetime.now
     )  # 实例创建时间
+    last_start_time: Optional[str] = Field(default=None, description="最近一次启动时间（ISO格式字符串）")
+    total_runtime: Optional[int] = Field(default=0, description="累计运行时长（秒）")
+    start_count: int = Field(default=0, description="启动次数")
 
 
 class DB_Service(SQLModel, table=True):

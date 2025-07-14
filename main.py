@@ -5,8 +5,6 @@ import sys
 
 # import sys
 from src.utils.config import global_config
-
-# 修改导入路径: from src.utils.database_model import initialize_database
 from src.utils.database import initialize_database  # <--- 修改此行
 from src.utils.database import get_db_instance  # 确保导入 get_db_instance
 from src.utils.server import global_server
