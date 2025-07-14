@@ -660,13 +660,14 @@ async def add_existing_instance(payload: DeployRequest):
                 detail=f"指定的适配器路径不是目录: {payload.adapter_path}",
             )
 
-        # 检验MaiBot路径中是否包含main.py
-        main_py_path = maibot_path / "main.py"
-        if not main_py_path.exists():
-            logger.error(f"MaiBot路径中未找到main.py: {payload.maibot_path}")
+
+        # 检验MaiBot路径中是否包含bot.py
+        bot_py_path = maibot_path / "bot.py"
+        if not bot_py_path.exists():
+            logger.error(f"MaiBot路径中未找到bot.py: {payload.maibot_path}")
             raise HTTPException(
                 status_code=400,
-                detail=f"MaiBot路径中未找到main.py文件: {payload.maibot_path}",
+                detail=f"MaiBot路径中未找到bot.py文件: {payload.maibot_path}",
             )
 
         # 使用MaiBot路径作为主安装路径
